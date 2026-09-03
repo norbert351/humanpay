@@ -1,0 +1,11 @@
+{
+  "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
+  "name": "HumanPay Agent",
+  "description": "Sybil-resistant stablecoin micro-payments on Celo: prove you are human (Self), then pay in USAT with gas in the token (fee abstraction), settling over x402.",
+  "image": "",
+  "active": true,
+  "services": [],
+  "x402Support": true,
+  "registrations": [],
+  "supportedTrust": ["reputation"]
+}
