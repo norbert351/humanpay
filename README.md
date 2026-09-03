@@ -51,17 +51,27 @@ The settlement rail is a seam: default `SimulatedSettlement` (no mainnet gas, he
 
 ```bash
 npm install
-npm test                          # 11 hermetic tests
-OPERATOR_ADDRESS=<0x…> npm start  # API (default :8080)
+npm test                          # 21 hermetic tests
+OPERATOR_ADDRESS=<0x…> npm start  # HTTP API (:8080)
+OP_OPERATOR_PK=<0x…> npm run bot  # Telegram bot (transcript mode w/o token; live polling with TELEGRAM_BOT_TOKEN)
 ```
 
-`OPERATOR_ADDRESS` = the human operator whose signature authorizes payments (the executor never holds the seed).
+## Real integrations (all wired + live-probed)
+
+### Telegram transport — the channel
+`src/telegram.js` turns `/limit <perTx> <dayCap> <totalCap> <payTo …>` and `/pay <amount> <payTo>` into the full policy→settle→receipt flow; `bot.mjs` long-polls the Bot API when `TELEGRAM_BOT_TOKEN` is set (transcript mode when not). Commands: `/start /limit /pay /status /proof /receipts`. Verified end-to-end (paid + blocked + intact chain).
+
+### Real x402 settlement (Celo facilitator)
+`src/x402Celo.js` — the hosted facilitator `api.x402.celo.org/settle` (USDC/USD₮/USA₮ gasless via EIP-3009, one prepaid credit per settlement, non-custodial). Set `X402_API_KEY` (get by signing a message at x402.celo.org), `X402_EXECUTOR_PK`, `X402_USAT`. Live-probed: `/settle` returns the real unauthorized contract; the EIP-3009 transfer-authorization recovers to the executor (tested).
+
+### Real Self proof-of-human (on-chain)
+`src/selfRegistry.js` — `SelfAgentRegistry` proxy on Celo mainnet (`0xaC3DF9…5944`, verified deployed): `hasHumanProof(agentId)` + `isProofFresh(agentId)` + `getAgentWallet(agentId) == signer`. Rejects unaccepted agents without any on-chain call. Set `SELF_AGENT_ID`.
 
 ## Status & honest limits
 
-- **Implemented + tested:** policy kernel, attribution, receipts, HTTP API, simulated settlement (all green).
-- **Real x402 settlement:** client code present and guarded behind `SETTLE=x402`; not yet exercised against mainnet gas (needs executor funding — next increment).
-- **Self integration:** seam built; real Self-verifier wiring pending a deployed Self proof path.
-- **Telegram transport:** the channel surface is next (bot handler) — the API is the agent-callable surface today.
+- **Implemented + tested:** 21 hermetic tests green — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API, Telegram transport, x402 EIP-3009 signer, SelfRegistry gate.
+- **Live-verified:** SelfAgentRegistry proxy deployed on mainnet ✓ · x402 `/settle` endpoint reachable (real unauthorized contract) ✓ · Telegram handler e2e (transcript) ✓.
+- **For a real mainnet settlement:** create an x402 API key at x402.celo.org (sign-message for the executor wallet), fund that wallet with USAT (executor currently holds 1.65 CELO, 0 USAT), and set `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT`. The prohibited `@selfxyz/core` ZK lib is too heavy for this 3.6 GB VM, so humanproof uses the lightweight on-chain registry instead; the full `SelfBackendVerifier` proof path is documented for a larger deploy.
+- **Telegram live:** needs a real `TELEGRAM_BOT_TOKEN` from @BotFather.
 
-Sources: agent-drain incidents (Algo Alpha, Forbes, TRM Labs), Celo Agents at Work rules (celobuilders.xyz), `@celo/attribution-tags`.
+Sources: agent-drain incidents (Algo Alpha, Forbes, TRM Labs), Celo Agents at Work rules (celobuilders.xyz), Celo docs (Self, x402), `@celo/attribution-tags`.

@@ -14,10 +14,14 @@ export class AuditStore {
 
   _hash(payload) { return createHash('sha256').update(payload).digest('hex'); }
 
+  _body({ decision, reason, request, settlement }) {
+    return JSON.stringify({ decision, reason, request, settlement }, (k, v) => (typeof v === 'bigint' ? v.toString() : v));
+  }
+
   append({ decision, reason, request, settlement }) {
     const index = this.chain.length;
     const prevHash = index ? this.chain[index - 1].hash : this._hash(`GENESIS:${this.secret}`);
-    const body = JSON.stringify({ decision, reason, request, settlement });
+    const body = this._body({ decision, reason, request, settlement });
     const hash = this._hash(`${this.secret}:${index}:${body}:${prevHash}`);
     const rec = { id: `r-${index}`, index, ts: Date.now(), decision, reason, request, settlement, prevHash, hash };
     this.chain.push(rec);
@@ -33,7 +37,7 @@ export class AuditStore {
     for (let i = 0; i < this.chain.length; i++) {
       const r = this.chain[i];
       const prevHash = i ? this.chain[i - 1].hash : this._hash(`GENESIS:${this.secret}`);
-      const body = JSON.stringify({ decision: r.decision, reason: r.reason, request: r.request, settlement: r.settlement });
+      const body = this._body({ decision: r.decision, reason: r.reason, request: r.request, settlement: r.settlement });
       if (r.prevHash !== prevHash) return { ok: false, at: r.index, reason: 'prevHash' };
       if (r.hash !== this._hash(`${this.secret}:${r.index}:${body}:${prevHash}`)) return { ok: false, at: r.index, reason: 'body' };
     }

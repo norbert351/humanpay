@@ -68,13 +68,33 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
 
 // Runnable: `npm start`
 //   OPERATOR_ADDRESS=<0x...>   the human operator whose signature authorizes payments
+//   SETTLE=x402                use the real Celo x402 facilitator (else in-memory sim)
+//   X402_API_KEY / X402_EXECUTOR_PK / X402_USAT   required for SETTLE=x402
+//   SELF_AGENT_ID              on-chain SelfAgentRegistry proof-of-human (else MockSelfGate)
 //   PORT=<n>                   default 8080
-// Settlement is the in-memory sim unless SETTLE=x402 + EXECUTOR_PK set (mainnet).
 if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
   const port = Number(process.env.PORT || 8080);
   const engine = process.env.OPERATOR_ADDRESS
     ? new SpendPolicyEngine({ operatorAddress: process.env.OPERATOR_ADDRESS })
     : new SpendPolicyEngine({ operatorAddress: '*' });
-  const server = createHumanPayApp({ engine });
-  server.listen(port, () => console.log(`HumanPay API on :${port} (tag ${ATTRIBUTION_TAG}, operator ${engine.operatorAddress})`));
+
+  let settlement;
+  if (process.env.SETTLE === 'x402') {
+    const { X402FacilitatorSettlement } = await import('./x402Celo.js');
+    settlement = new X402FacilitatorSettlement({
+      apiKey: process.env.X402_API_KEY,
+      executorPrivateKey: process.env.X402_EXECUTOR_PK,
+      usatAddress: process.env.X402_USAT,
+      facilitatorUrl: process.env.X402_URL || 'https://api.x402.celo.org',
+    });
+  }
+
+  let selfGate;
+  if (process.env.SELF_AGENT_ID) {
+    const { SelfRegistryGate } = await import('./selfRegistry.js');
+    selfGate = new SelfRegistryGate({ acceptedAgentIds: [process.env.SELF_AGENT_ID] });
+  }
+
+  const server = createHumanPayApp({ engine, settlement, selfGate });
+  server.listen(port, () => console.log(`HumanPay API on :${port} (tag ${ATTRIBUTION_TAG}, operator ${engine.operatorAddress}, settle=${settlement ? 'x402' : 'sim'})`));
 }
