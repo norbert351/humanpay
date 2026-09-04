@@ -15,10 +15,11 @@ import {
   createPublicClient, recoverTypedDataAddress,
 } from 'viem';
 import { taggedCall, TAG } from './attribution.js';
+import { USAT_SIGNER_DOMAIN, USAT_ADDRESS, USAT_DECIMALS } from './constants.js';
 
-// Celo USAT / USDT EIP-3009 domain. Params are configurable because the exact
-// token name/version vary; defaults follow Tether's USD₮ EIP-3009 domain.
-const DEFAULT_DOMAIN = { name: 'USD Tether', version: '1', chainId: 42220, verifyingContract: '' };
+// EIP-3009 domain for the Celo-native USAT (Tether America USD). Default verified
+// on-chain 2026-09-04 (signature verifies with name "Tether America USD" and only then).
+// Overridable via X402_DOMAIN_NAME / X402_DOMAIN_VERSION (default = verified USAT_SIGNER_DOMAIN).
 
 const TRANSFER_WITH_AUTH_TYPE = {
   TransferWithAuthorization: [
@@ -38,16 +39,21 @@ export class X402FacilitatorSettlement {
    */
   constructor({
     apiKey, executorPrivateKey, facilitatorUrl = 'https://api.x402.celo.org',
-    usatAddress, domain, rpcUrl = 'https://forno.celo.org',
+    usatAddress, domain, domainName, domainVersion, rpcUrl = 'https://forno.celo.org',
   }) {
     if (!apiKey) throw new Error('X402FacilitatorSettlement requires apiKey (from x402.celo.org)');
     if (!executorPrivateKey) throw new Error('X402FacilitatorSettlement requires executorPrivateKey');
-    if (!usatAddress) throw new Error('X402FacilitatorSettlement requires usatAddress');
     this.apiKey = apiKey;
     this.executor = privateKeyToAccount(executorPrivateKey);
     this.facilitatorUrl = facilitatorUrl;
-    this.usatAddress = usatAddress;
-    this.domain = domain || { ...DEFAULT_DOMAIN, verifyingContract: usatAddress };
+    // USAT on Celo mainnet (verified 2026-09-04). Optional so a Sepolia/token quirk can override.
+    this.usatAddress = usatAddress || USAT_ADDRESS;
+    this.domain = domain || {
+      ...USAT_SIGNER_DOMAIN,
+      verifyingContract: this.usatAddress,
+      name: domainName || USAT_SIGNER_DOMAIN.name,
+      version: domainVersion || USAT_SIGNER_DOMAIN.version,
+    };
     this.wallet = createWalletClient({ account: this.executor, transport: http(rpcUrl) });
   }
 

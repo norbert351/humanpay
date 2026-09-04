@@ -6,6 +6,7 @@
 // bot in bot.mjs wires it to a real token.
 import { authMessage } from './policy.js';
 import { fmtMicro } from './policy.js';
+import { railStatus, railStatusLine } from './railcheck.js';
 
 const HELP = [
   'HumanPay — bounded auto-pay agent (Celo, tag celo_131f6e57e5b5).',
@@ -13,6 +14,7 @@ const HELP = [
   '/limit <perTx> <dayCap> <totalCap> <payTo ...> — set the one-time bounded spend policy (USAT units) + payee allowlist',
   '/pay <amount> <payTo> [note] — request a payment (operator signs; must be within caps + allowlisted)',
   '/status — policy + operator',
+  '/rail — live settlement + proof-of-human rail readiness',
   '/proof — audit-chain integrity',
   '/receipts — last receipts',
 ].join('\n');
@@ -37,6 +39,7 @@ export class TeleMessageHandler {
     switch (cmd) {
       case '/start': return HELP;
       case '/status': return this.status();
+      case '/rail': return await this.rail();
       case '/proof': return this.proof();
       case '/receipts': return this.receiptsText();
       case '/limit': return await this.setLimit(rest);
@@ -50,6 +53,16 @@ export class TeleMessageHandler {
     return l
       ? `operator: ${this.operatorAddress}\nperTx ${fmtMicro(l.perTxMaxMicro)} · day ${fmtMicro(l.dayCapMicro)} · total ${fmtMicro(l.totalCapMicro)} · allowAny ${l.allowAny}\nspent(day ${fmtMicro(this.engine.spentToday)} / total ${fmtMicro(this.engine.spentTotal)})`
       : `operator: ${this.operatorAddress} — no spend-limit set yet (run /limit)`;
+  }
+
+  /** Honest live readiness of the settlement + proof-of-human rails. */
+  async rail() {
+    try {
+      const s = await railStatus({ operatorAddress: this.operatorAddress, settlement: this.settlement, selfGate: this.selfGate });
+      return railStatusLine(s);
+    } catch (e) {
+      return `rail check error: ${(e && e.message) || e}`;
+    }
   }
 
   proof() { return JSON.stringify(this.receipts.verifyChain()); }

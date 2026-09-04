@@ -8,4 +8,6 @@ export { SelfRegistryGate, SELF_REGISTRY } from './selfRegistry.js';
 export { TeleMessageHandler } from './telegram.js';
 export { taggedCall, codesIn, SUFFIX } from './attribution.js';
 export { createHumanPayApp } from './api.js';
-export { CHAIN_ID, CELO_RPC, ATTRIBUTION_TAG, AGENT_WALLET, USAT } from './constants.js';
+export { railStatus, railStatusLine } from './railcheck.js';
+export { buildRuntime, startBotPoller, resolveSettlement, resolveSelfGate } from './runtime.js';
+export { CHAIN_ID, CELO_RPC, ATTRIBUTION_TAG, AGENT_WALLET, USAT, USAT_ADDRESS, USAT_DECIMALS, USAT_SIGNER_DOMAIN } from './constants.js';

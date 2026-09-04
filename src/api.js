@@ -7,6 +7,7 @@ import { MockSelfGate } from './selfGate.js';
 import { SimulatedSettlement } from './settlement.js';
 import { AuditStore } from './receipts.js';
 import { ATTRIBUTION_TAG, CHAIN_ID, AGENT_WALLET } from './constants.js';
+import { railStatus } from './railcheck.js';
 
 export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settlement = new SimulatedSettlement(), receipts = new AuditStore() }) {
   engine = engine || new SpendPolicyEngine({ operatorAddress: '*' });
@@ -28,6 +29,9 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
 
       if (req.method === 'GET' && u.pathname === '/health') {
         result = { code: 200, body: { ok: true, tag: ATTRIBUTION_TAG, chainId: CHAIN_ID, agentWallet: AGENT_WALLET } };
+      } else if (req.method === 'GET' && u.pathname === '/rails') {
+        // Honest live rail-readiness (funding, settlement, self) — no invented readiness.
+        result = { code: 200, body: await railStatus({ operatorAddress: engine.operatorAddress, settlement, selfGate }) };
       } else if (req.method === 'GET' && u.pathname === '/receipts') {
         result = { code: 200, body: receipts.all() };
       } else if (req.method === 'GET' && u.pathname.startsWith('/receipts/')) {

@@ -1,0 +1,36 @@
+# HumanPay — bounded auto-pay agent (Celo Agents at Work 2026)
+# Render blueprint: ONE durable web service that runs the HTTP API AND the
+# Telegram long-poll bot together (see src/server.js). Because the bot keeps an
+# open getUpdates long-poll, the free-tier instance never idles to sleep — the
+# API + Telegram channel stay live for judges.
+services:
+  - type: web
+    name: humanpay
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/server.js
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: 22.23.1
+      - key: PORT
+        value: 10000
+      # --- credentials (fill in Render dashboard as secret env vars) ---
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false                      # set the live value in Dashboard -> Environment
+      - key: OP_OPERATOR_PK
+        sync: false
+      - key: AUDIT_SECRET
+        sync: false
+      # --- real x402 settlement rail (optional; SIM without) ---
+      - key: X402_API_KEY
+        sync: false
+      - key: X402_EXECUTOR_PK
+        sync: false
+      - key: X402_USAT
+        sync: false
+      # --- real Self proof-of-human rail (optional; MOCK without) ---
+      - key: SELF_AGENT_ID
+        sync: false

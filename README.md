@@ -36,42 +36,53 @@ So even a prompt-injected agent cannot exceed its bounds, self-authorize, or mov
 ```
 src/
   policy.js       SpendPolicyEngine — the anti-drain decision kernel (operator-signed, bounded, allowlisted)
-  settlement.js   SimulatedSettlement (hermetic/demo) + X402Settlement (real USAT-over-x402, tagged)
-  selfGate.js     MockSelfGate + SelfSDKGate (real Self seam)
+  settlement.js   SimulatedSettlement (hermetic/demo)
+  x402Celo.js     X402FacilitatorSettlement — real USAT-over-x402 EIP-3009, ERC-8021-tagged
+  selfGate.js     MockSelfGate + SelfRegistryGate switch (demo ↔ on-chain)
+  selfRegistry.js SelfAgentRegistry on-chain proof-of-personhood gate
   receipts.js     AuditStore — hash-chained allow/block ledger
   attribution.js  ERC-8021 toDataSuffix/taggedCall wrapper
-  api.js          HTTP surface: /health /limits /pay /block /receipts /receipts/:id /proof
-  constants.js    chain 42220, tag, agent wallet
-test/             11 hermetic tests (node --test) proving allow/block/attribution/tamper
+  railcheck.js    honest live rail-readiness: funding (CELO/USAT), settlement, Self (/rails, /rail)
+  api.js          HTTP surface: /health /rails /limits /pay /block /receipts /receipts/:id /proof
+  runtime.js      single-source live wiring: resolveSettlement/resolveSelfGate/buildRuntime + startBotPoller
+  server.js       combined durable production entry: HTTP API + Telegram bot in ONE process (Render)
+  constants.js    chain 42220, tag, agent wallet, verified USAT address + EIP-3009 domain
+test/             26 hermetic tests (node --test) proving allow/block/attribution/tamper/rail
 ```
 
-The settlement rail is a seam: default `SimulatedSettlement` (no mainnet gas, hermetic tests) swaps to the real `X402Settlement` once `SETTLE=x402` + `EXECUTOR_PK` are set. The Self gate is a seam: `MockSelfGate` for demo, `SelfSDKGate` for the deployed verifier.
+The settlement rail is a seam: default `SimulatedSettlement` (no mainnet gas, hermetic tests) swaps to the real `X402FacilitatorSettlement` once `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT` are set. The Self gate is a seam: `MockSelfGate` for demo, `SelfRegistryGate` once `SELF_AGENT_ID` is set. `GET /rails` / the `/rail` Telegram command report this live so the demo never misrepresents what is real vs simulated.
 
 ## Run
 
 ```bash
 npm install
-npm test                          # 21 hermetic tests
+npm test                          # 26 hermetic tests
 OPERATOR_ADDRESS=<0x…> npm start  # HTTP API (:8080)
 OP_OPERATOR_PK=<0x…> npm run bot  # Telegram bot (transcript mode w/o token; live polling with TELEGRAM_BOT_TOKEN)
+OP_OPERATOR_PK=<0x…> npm run serve  # combined: HTTP API + Telegram bot in ONE process (Render / durable PaaS)
 ```
 
 ## Real integrations (all wired + live-probed)
 
 ### Telegram transport — the channel
-`src/telegram.js` turns `/limit <perTx> <dayCap> <totalCap> <payTo …>` and `/pay <amount> <payTo>` into the full policy→settle→receipt flow; `bot.mjs` long-polls the Bot API when `TELEGRAM_BOT_TOKEN` is set (transcript mode when not). Commands: `/start /limit /pay /status /proof /receipts`. Verified end-to-end (paid + blocked + intact chain).
+`src/telegram.js` turns `/limit <perTx> <dayCap> <totalCap> <payTo …>` and `/pay <amount> <payTo>` into the full policy→settle→receipt flow; `bot.mjs` / `src/server.js` long-polls the Bot API when `TELEGRAM_BOT_TOKEN` is set. Commands: `/start /limit /pay /status /rail /proof /receipts`. **Live**: `@tokenscanner2_bot` is polling (verified via 409 — a second `getUpdates` conflicts with the bot's open long-poll). Send `/start`, `/rail`, `/limit`, `/pay`, `/status` to it.
 
 ### Real x402 settlement (Celo facilitator)
-`src/x402Celo.js` — the hosted facilitator `api.x402.celo.org/settle` (USDC/USD₮/USA₮ gasless via EIP-3009, one prepaid credit per settlement, non-custodial). Set `X402_API_KEY` (get by signing a message at x402.celo.org), `X402_EXECUTOR_PK`, `X402_USAT`. Live-probed: `/settle` returns the real unauthorized contract; the EIP-3009 transfer-authorization recovers to the executor (tested).
+`src/x402Celo.js` — the hosted facilitator `api.x402.celo.org/settle` (USDC/USD₮/USA₮ gasless via EIP-3009, one prepaid credit per settlement, non-custodial). Set `X402_API_KEY` (get by signing a message at x402.celo.org), `X402_EXECUTOR_PK`, `X402_USAT`.
+**USAT verified on-chain (2026-09-04):** mainnet token = `0xD2ab3C9A02DBBAB236BfEC45D1d755DF4267F771` (Tether America USD, 6 decimals) and its EIP-3009 signing-domain name is **`"Tether America USD"`** — confirmed with a live `eth_call` (that name verifies; every other candidate reverts `TetherToken: invalid signature`). The client defaults to this; `X402_DOMAIN_NAME`/`X402_DOMAIN_VERSION` override if a token quirk ever differs. `/settle` live-probed: returns the real `unauthorized` contract without a valid key.
 
 ### Real Self proof-of-human (on-chain)
 `src/selfRegistry.js` — `SelfAgentRegistry` proxy on Celo mainnet (`0xaC3DF9…5944`, verified deployed): `hasHumanProof(agentId)` + `isProofFresh(agentId)` + `getAgentWallet(agentId) == signer`. Rejects unaccepted agents without any on-chain call. Set `SELF_AGENT_ID`.
 
+### Rail readiness (`/rails` API + `/rail` Telegram)
+`src/railcheck.js` reads live state — executor CELO + USAT balances on-chain, settlement rail class + key presence, Self agent state — so you (or a judge) can see in one call exactly what is LIVE vs SIM vs BLOCKED and what to fund/enable.
+
 ## Status & honest limits
 
-- **Implemented + tested:** 21 hermetic tests green — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API, Telegram transport, x402 EIP-3009 signer, SelfRegistry gate.
-- **Live-verified:** SelfAgentRegistry proxy deployed on mainnet ✓ · x402 `/settle` endpoint reachable (real unauthorized contract) ✓ · Telegram handler e2e (transcript) ✓.
-- **For a real mainnet settlement:** create an x402 API key at x402.celo.org (sign-message for the executor wallet), fund that wallet with USAT (executor currently holds 1.65 CELO, 0 USAT), and set `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT`. The prohibited `@selfxyz/core` ZK lib is too heavy for this 3.6 GB VM, so humanproof uses the lightweight on-chain registry instead; the full `SelfBackendVerifier` proof path is documented for a larger deploy.
-- **Telegram live:** needs a real `TELEGRAM_BOT_TOKEN` from @BotFather.
+- **Implemented + tested:** 26 hermetic tests green — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API, Telegram transport, x402 EIP-3009 signer (verified USAT domain), SelfRegistry gate, rail-readiness.
+- **Live-verified:** SelfAgentRegistry proxy deployed on mainnet ✓ · x402 `/settle` endpoint reachable (real unauthorized contract) ✓ · USAT token + EIP-3009 domain confirmed on-chain ✓ · **Telegram bot `@tokenscanner2_bot` online + polling** ✓ (live `/start /rail /limit /pay /status`).
+- **Honest rail state right now (see `GET /rails` or `/rail`):** settlement = SIM, self = MOCK, executor balance = **0 CELO / 0 USAT** (re-verified on-chain 2026-09-04).
+- **To move real USAT:** (1) fund the executor/agent wallet `0x73b1…4539` with CELO (gas) + USAT (the value that leaves it), (2) create an x402 API key at x402.celo.org by signing a message with that wallet → set `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT` → settlement flips LIVE. (3) For real proof-of-human, register a **Self Agent ID** (QR scan in the Self app) → set `SELF_AGENT_ID` → self gate flips LIVE.
+- **Deploy:** `render.yaml` runs the combined server (`src/server.js`) on one durable free web service — the bot's open long-poll keeps the instance awake, so API + Telegram stay live for judges. The heavy `@selfxyz/core` ZK lib is documented-not-installed (too big for this 3.6 GB VM); the lightweight on-chain agent gate is the shipping path.
 
-Sources: agent-drain incidents (Algo Alpha, Forbes, TRM Labs), Celo Agents at Work rules (celobuilders.xyz), Celo docs (Self, x402), `@celo/attribution-tags`.
+Sources: agent-drain incidents (Algo Alpha, Forbes, TRM Labs), Celo Agents at Work rules (celobuilders.xyz), Celo docs (Self, x402), `@celo/attribution-tags`, USAT mainnet verification (cast + EIP-3009 eth_call).

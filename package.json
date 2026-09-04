@@ -5,9 +5,10 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "test": "node --test test/",
+    "test": "node --test test/*.test.js",
     "start": "node src/api.js",
-    "bot": "node bot.mjs"
+    "bot": "node bot.mjs",
+    "serve": "node src/server.js"
   },
   "engines": {
     "node": ">=20"
