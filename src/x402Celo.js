@@ -15,6 +15,7 @@ import {
   createPublicClient, recoverTypedDataAddress,
 } from 'viem';
 import { taggedCall, TAG } from './attribution.js';
+import { transferAuthTypedData } from './auth.js';
 import { USAT_SIGNER_DOMAIN, USAT_ADDRESS, USAT_DECIMALS } from './constants.js';
 
 // EIP-3009 domain for the Celo-native USAT (Tether America USD). Default verified
@@ -97,6 +98,68 @@ export class X402FacilitatorSettlement {
       signature,
       resource: tagResource(payTo, amountMicro),
     };
+    const resp = await fetch(`${this.facilitatorUrl}/settle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': this.apiKey },
+      body: JSON.stringify({ network: 'celo', payment: JSON.stringify(payment) }),
+    });
+    const data = await resp.json().catch(async () => ({ raw: await resp.text() }));
+    if (!resp.ok) throw new Error(`x402 settle failed (${resp.status}): ${data.error || data.message || JSON.stringify(data)}`);
+    return { source: 'x402-facilitator', settled: data.settled ?? true, txHash: data.txHash ?? data.transaction, credits: data.credits, payment, tag: TAG };
+  }
+
+  /** Resolve the signing account for a payment: per-tip signer if given, else the executor. */
+  signerFor(signerPrivateKey) {
+    return signerPrivateKey ? privateKeyToAccount(signerPrivateKey) : this.executor;
+  }
+
+  /**
+   * P2P dev-mode tip: sign an EIP-3009 transfer where `from` is the SENDER's own
+   * wallet (not the executor) and relay via the facilitator. signerPrivateKey is
+   * the sender's OWN key (bound via /key) — the bot still never consolidates funds.
+   */
+  async payFrom({ amountMicro, payTo, token = 'USAT', chainId = 42220, nonce, from, signerPrivateKey }) {
+    if (Number(chainId) !== 42220) throw new Error('PAYMENT-SIGNATURE: wrong chainId');
+    const authorizer = this.signerFor(signerPrivateKey);
+    const sender = (from || authorizer.address).toLowerCase();
+    const typedData = transferAuthTypedData({
+      from: sender,
+      to: payTo.toLowerCase(),
+      value: this.toAtomic(amountMicro),
+      nonce,
+      domain: this.domain,
+    });
+    const signature = await authorizer.signTypedData(typedData);
+    return this._relay({ typedData, signature, payTo: payTo.toLowerCase(), amountMicro });
+  }
+
+  /**
+   * PRODUCTION self-custody path: return the unsigned EIP-3009 typed-data the
+   * sender must sign in their own wallet app (never exposing their key to the bot).
+   */
+  async offlineAuth({ amountMicro, payTo, from, token = 'USAT', chainId = 42220, nonce }) {
+    if (Number(chainId) !== 42220) throw new Error('PAYMENT-SIGNATURE: wrong chainId');
+    const typedData = transferAuthTypedData({
+      from: from.toLowerCase(),
+      to: payTo.toLowerCase(),
+      value: this.toAtomic(amountMicro),
+      nonce,
+      domain: this.domain,
+    });
+    return { typedData, signature: null };
+  }
+
+  /** Relay a user-signed EIP-3009 authorization through the facilitator. */
+  async settleWithSignature({ typedData, signature }) {
+    if (!signature || !/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new Error('PAYMENT-SIGNATURE: invalid signature');
+    const value = BigInt(typedData.message.value);
+    const amountMicro = value / 10n ** BigInt(USAT_DECIMALS);
+    const payTo = typedData.message.to;
+    return this._relay({ typedData, signature, payTo, amountMicro });
+  }
+
+  async _relay({ typedData, signature, payTo, amountMicro }) {
+    const payment = { ...typedData, signature, resource: tagResource(payTo, amountMicro) };
     const resp = await fetch(`${this.facilitatorUrl}/settle`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': this.apiKey },

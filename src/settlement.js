@@ -9,7 +9,8 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { createWalletClient, http, encodeFunctionData, parseEther } from 'viem';
 import { celo } from 'viem/chains';
 import { taggedCall, codesIn } from './attribution.js';
-import { USAT, ERC20_TRANSFER_SIG, MICRO } from './constants.js';
+import { transferAuthTypedData } from './auth.js';
+import { USAT, ERC20_TRANSFER_SIG, MICRO, USAT_SIGNER_DOMAIN } from './constants.js';
 
 const ERC20_ABI = [
   { type: 'function', name: 'transfer', stateMutability: 'nonpayable',
@@ -48,6 +49,43 @@ export class SimulatedSettlement {
     return { ledgerId: id, txHash, calldata, suffixCodes: codesIn(calldata) };
   }
   get(id) { return this.ledger.get(id); }
+
+  /** Simulated self-custody auth: return the EIP-3009 typed-data for the sender to sign. */
+  async offlineAuth({ amountMicro, payTo, from, token = 'USAT', chainId = 42220, nonce }) {
+    if (Number(chainId) !== 42220) throw new Error('PAYMENT-SIGNATURE: wrong chainId');
+    const typedData = transferAuthTypedData({
+      from: from.toLowerCase(),
+      to: payTo.toLowerCase(),
+      value: unitToWei(amountMicro, 6),
+      nonce,
+      domain: USAT_SIGNER_DOMAIN,
+    });
+    return { typedData, signature: null };
+  }
+
+  /** Simulated DEV-mode auto-sign tip (signs EIP-3009 from the sender's own key). */
+  async payFrom({ amountMicro, payTo, from, token = 'USAT', chainId = 42220, nonce, signerPrivateKey }) {
+    if (Number(chainId) !== 42220) throw new Error('PAYMENT-SIGNATURE: wrong chainId');
+    const signer = signerPrivateKey ? privateKeyToAccount(signerPrivateKey).address.toLowerCase() : String(from).toLowerCase();
+    const fromAddr = (from || signer).toLowerCase();
+    const typedData = transferAuthTypedData({ from: fromAddr, to: payTo.toLowerCase(), value: unitToWei(amountMicro, 6), nonce, domain: USAT_SIGNER_DOMAIN });
+    const signature = signerPrivateKey
+      ? await privateKeyToAccount(signerPrivateKey).signTypedData(typedData)
+      : '0x' + '0'.repeat(130);
+    return this.settleWithSignature({ typedData, signature });
+  }
+
+  /** Simulated relay of a user-signed EIP-3009 authorization. */
+  async settleWithSignature({ typedData, signature }) {
+    const value = BigInt(typedData.message.value);
+    const amountMicro = value / 10n ** 6n;
+    const payTo = typedData.message.to;
+    const from = typedData.message.from;
+    const id = `sim-p2p-${this.next++}`;
+    const txHash = `0x${createHash('sha256').update(id + Date.now()).digest('hex').slice(0, 64)}`;
+    this.ledger.set(id, { id, txHash, amountMicro, payTo, from, token: 'USAT', chainId: 42220, suffixCodes: [] });
+    return { source: 'simulated', ledgerId: id, txHash, from, payTo, amountMicro };
+  }
 }
 
 export class X402Settlement {

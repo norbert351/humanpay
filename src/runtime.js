@@ -11,6 +11,8 @@ import { SelfRegistryGate } from './selfRegistry.js';
 import { SimulatedSettlement } from './settlement.js';
 import { X402FacilitatorSettlement } from './x402Celo.js';
 import { TeleMessageHandler } from './telegram.js';
+import { P2PTeleMessageHandler } from './p2p.js';
+import { UserRegistry } from './users.js';
 import { USAT_ADDRESS } from './constants.js';
 
 /** Resolve the settlement rail: real x402 facilitator when creds are present, else sim. */
@@ -45,10 +47,22 @@ export function buildRuntime() {
   const settlement = resolveSettlement();
   const selfGate = resolveSelfGate();
   const receipts = new AuditStore(process.env.AUDIT_SECRET);
-  const handler = new TeleMessageHandler({
+  const legacyHandler = new TeleMessageHandler({
     engine, selfGate, settlement, receipts, operatorSign, operatorAddress: opAcc.address,
   });
-  return { handler, settlement, selfGate, receipts, engine, operatorAddress: opAcc.address };
+  const registry = new UserRegistry();
+  const p2p = new P2PTeleMessageHandler({ registry, selfGate, settlement, receipts });
+  // Dispatcher: P2P commands (register/key/limit/tip/…) route to the peer handler;
+  // anything else (legacy agent /pay) falls through to the single-operator handler.
+  const handler = {
+    async handle(text, ctx = {}) {
+      const r = await p2p.handle(text, ctx);
+      return r !== null ? r : legacyHandler.handle(text);
+    },
+    legacy: (t) => legacyHandler.handle(t),
+    p2p,
+  };
+  return { handler, p2p, registry, settlement, selfGate, receipts, engine, operatorAddress: opAcc.address };
 }
 
 /**
@@ -75,7 +89,8 @@ export function startBotPoller({ token, handler, log = console.log }) {
         const m = u.message || u.edited_message;
         if (!m || !m.text) continue;
         try {
-          const reply = await handler.handle(m.text);
+          const ctx = { chatId: m.chat && m.chat.id, chat: m.chat, from: m.from };
+          const reply = await handler.handle(m.text, ctx);
           if (reply) await send(m.chat.id, reply);
         } catch (e) { onError(e); }
       }

@@ -80,6 +80,26 @@ export class SpendPolicyEngine {
     catch (e) { return { allow: false, reason: 'BAD_SIGNATURE' }; }
     if (signer !== this.operatorAddress) return { allow: false, reason: 'OPERATOR_MISMATCH' };
 
+    return this._budgetAllow(amt, payTo, token, chainId);
+  }
+
+  /**
+   * Budget + allowlist check WITHOUT signature recovery. Used by the self-custody
+   * P2P path, where the EIP-3009 transfer signature is verified at the transport
+   * layer (recoverTypedDataAddress over the sender's own wallet). The manager here
+   * still enforces per-user caps + the registered-recipient rule.
+   */
+  async checkBudget({ amountMicro, payTo, token, chainId }) {
+    if (!this.limit) return { allow: false, reason: 'NO_LIMIT' };
+    const amt = BigInt(amountMicro);
+    if (token !== USAT) return { allow: false, reason: `TOKEN_NOT_ALLOWED:${token}` };
+    if (Number(chainId) !== Number(CHAIN_ID)) return { allow: false, reason: `CHAIN_NOT_ALLOWED:${chainId}` };
+    if (amt <= 0n) return { allow: false, reason: 'NON_POSITIVE_AMOUNT' };
+    return this._budgetAllow(amt, payTo, token, chainId);
+  }
+
+  /** Shared per-tx / daily / lifetime / allowlist cap check; reserves spend on ALLOW. */
+  _budgetAllow(amt, payTo, token, chainId) {
     // 4. per-tx cap
     if (amt > this.limit.perTxMaxMicro) return { allow: false, reason: 'OVER_PER_TX_CAP' };
 

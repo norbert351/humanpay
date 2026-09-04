@@ -35,9 +35,13 @@ So even a prompt-injected agent cannot exceed its bounds, self-authorize, or mov
 
 ```
 src/
-  policy.js       SpendPolicyEngine — the anti-drain decision kernel (operator-signed, bounded, allowlisted)
-  settlement.js   SimulatedSettlement (hermetic/demo)
-  x402Celo.js     X402FacilitatorSettlement — real USAT-over-x402 EIP-3009, ERC-8021-tagged
+  policy.js       SpendPolicyEngine — the anti-drain decision kernel (operator-signed, bounded, allowlisted) + per-user checkBudget (self-custody)
+  settlement.js   SimulatedSettlement (hermetic/demo) + offlineAuth/settleWithSignature/payFrom (per-user from)
+  x402Celo.js     X402FacilitatorSettlement — real USAT-over-x402 EIP-3009, ERC-8021-tagged, per-user from/signer
+  auth.js         shared EIP-3009 TransferWithAuthorization typed-data builder (from = sender's own wallet)
+  users.js        UserRegistry — bind each user's own wallet to their chat; the peer roster (== payTo allowlist)
+  p2p.js          P2PTeleMessageHandler — /register /key /limit /me /tip /tipsign /wallet (self-custody + DEV)
+  p2pSign.js      DEV-mode policy auth (signMessage from the user's own key)
   selfGate.js     MockSelfGate + SelfRegistryGate switch (demo ↔ on-chain)
   selfRegistry.js SelfAgentRegistry on-chain proof-of-personhood gate
   receipts.js     AuditStore — hash-chained allow/block ledger
@@ -47,7 +51,7 @@ src/
   runtime.js      single-source live wiring: resolveSettlement/resolveSelfGate/buildRuntime + startBotPoller
   server.js       combined durable production entry: HTTP API + Telegram bot in ONE process (Render)
   constants.js    chain 42220, tag, agent wallet, verified USAT address + EIP-3009 domain
-test/             26 hermetic tests (node --test) proving allow/block/attribution/tamper/rail
+test/             31 hermetic tests (node --test) proving allow/block/attribution/tamper/rail + P2P flows
 ```
 
 The settlement rail is a seam: default `SimulatedSettlement` (no mainnet gas, hermetic tests) swaps to the real `X402FacilitatorSettlement` once `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT` are set. The Self gate is a seam: `MockSelfGate` for demo, `SelfRegistryGate` once `SELF_AGENT_ID` is set. `GET /rails` / the `/rail` Telegram command report this live so the demo never misrepresents what is real vs simulated.
@@ -67,6 +71,17 @@ OP_OPERATOR_PK=<0x…> npm run serve  # combined: HTTP API + Telegram bot in ONE
 ### Telegram transport — the channel
 `src/telegram.js` turns `/limit <perTx> <dayCap> <totalCap> <payTo …>` and `/pay <amount> <payTo>` into the full policy→settle→receipt flow; `bot.mjs` / `src/server.js` long-polls the Bot API when `TELEGRAM_BOT_TOKEN` is set. Commands: `/start /limit /pay /status /rail /proof /receipts`. **Live**: `@tokenscanner2_bot` is polling (verified via 409 — a second `getUpdates` conflicts with the bot's open long-poll). Send `/start`, `/rail`, `/limit`, `/pay`, `/status` to it.
 
+### P2P tips — bring your own wallet, tip your people
+The peer lane (`src/p2p.js`) turns HumanPay from one-operator-holds-the-wallet into **user-funded, peer-to-peer**: each user binds their OWN Celo wallet to their chat and tips OTHER registered users through the bot. A tip moves USAT from the **sender's** wallet to the **recipient's** wallet over gasless EIP-3009/x402 — the bot never consolidates funds.
+
+Commands: `/register <0xWallet> [@handle]` · `/key <pk>` (DEV seam) · `/limit <perTx> <dayCap> <totalCap>` · `/me` · `/wallet <@user>` · `/tip <amount> <@user|0xWallet>` · `/tipsign <sig>`.
+
+Two sign paths, both shipped:
+- **Self-custody (primary):** `/tip` returns the exact EIP-3009 `TransferWithAuthorization` typed-data to sign in the sender's own wallet app; `/tipsign <sig>` relays it. The bot never sees a key — the drain story stays intact.
+- **DEV seam (demo):** `/key <pk>` binds the sender's own key so `/tip` auto-signs from their wallet in one step (honest, labeled `DEV mode`).
+
+The anti-drain spine is now **per-user**: each user's self-set spend caps bound THEIR OWN wallet, and the `UserRegistry` **is** the payTo allowlist — you can only tip registered users, so money can never flow to an undeclared address. Every allow/block is hash-chained into the shared `AuditStore` and ERC-8021-tagged. Proven by 5 hermetic P2P tests + a live `buildRuntime` smoke run (→ `test/p2p.test.js`).
+
 ### Real x402 settlement (Celo facilitator)
 `src/x402Celo.js` — the hosted facilitator `api.x402.celo.org/settle` (USDC/USD₮/USA₮ gasless via EIP-3009, one prepaid credit per settlement, non-custodial). Set `X402_API_KEY` (get by signing a message at x402.celo.org), `X402_EXECUTOR_PK`, `X402_USAT`.
 **USAT verified on-chain (2026-09-04):** mainnet token = `0xD2ab3C9A02DBBAB236BfEC45D1d755DF4267F771` (Tether America USD, 6 decimals) and its EIP-3009 signing-domain name is **`"Tether America USD"`** — confirmed with a live `eth_call` (that name verifies; every other candidate reverts `TetherToken: invalid signature`). The client defaults to this; `X402_DOMAIN_NAME`/`X402_DOMAIN_VERSION` override if a token quirk ever differs. `/settle` live-probed: returns the real `unauthorized` contract without a valid key.
@@ -79,7 +94,7 @@ OP_OPERATOR_PK=<0x…> npm run serve  # combined: HTTP API + Telegram bot in ONE
 
 ## Status & honest limits
 
-- **Implemented + tested:** 26 hermetic tests green — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API, Telegram transport, x402 EIP-3009 signer (verified USAT domain), SelfRegistry gate, rail-readiness.
+- **Implemented + tested:** 31 hermetic tests green — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API, Telegram transport, P2P user-funded tips (self-custody + DEV), x402 EIP-3009 signer (verified USAT domain), SelfRegistry gate, rail-readiness.
 - **Live-verified:** SelfAgentRegistry proxy deployed on mainnet ✓ · x402 `/settle` endpoint reachable (real unauthorized contract) ✓ · USAT token + EIP-3009 domain confirmed on-chain ✓ · **Telegram bot `@tokenscanner2_bot` online + polling** ✓ (live `/start /rail /limit /pay /status`).
 - **Honest rail state right now (see `GET /rails` or `/rail`):** settlement = SIM, self = MOCK, executor balance = **0 CELO / 0 USAT** (re-verified on-chain 2026-09-04).
 - **To move real USAT:** (1) fund the executor/agent wallet `0x73b1…4539` with CELO (gas) + USAT (the value that leaves it), (2) create an x402 API key at x402.celo.org by signing a message with that wallet → set `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT` → settlement flips LIVE. (3) For real proof-of-human, register a **Self Agent ID** (QR scan in the Self app) → set `SELF_AGENT_ID` → self gate flips LIVE.
