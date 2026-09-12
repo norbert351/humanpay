@@ -19,6 +19,11 @@
   "x402Support": true,
   "registrations": [
     {
+      "agentId": 9836,
+      "agentRegistry": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+      "note": "current Celo identity, owned by the live operator 0x10b4…A4A6"
+    },
+    {
       "agentId": 9813,
       "agentRegistry": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
       "note": "original Celo identity (owner 0x73b1…4539 — rotated off after a compromise; retained for history)"
