@@ -106,11 +106,14 @@ export function startBotPoller({ token, handler, log = console.log }) {
     try {
       const res = await fetch(`${base}/getUpdates?timeout=30&offset=${offset}`, { signal: AbortSignal.timeout(70_000) });
       if (res.status === 409) {
-        // Another poller owns the slot. Back off hard but keep trying, so this
-        // process reclaims the slot as soon as the other one stops.
-        failures++;
-        delay = Math.min(30_000, 2_000 * failures);
-        onError(new Error('409 Conflict — another getUpdates poller is running; backing off'));
+        // Another getUpdates caller grabbed the slot. IMPORTANT: this is usually
+        // OUR OWN probe/monitoring, and Telegram terminates the OLDER poll — so
+        // the correct response is to re-poll QUICKLY and take the slot back, not
+        // to back off. (Backing off here created a self-inflicted starvation
+        // loop: every external health probe knocked the poller out for up to 30s,
+        // which made the bot look dead to the next probe.)
+        onError(new Error('409 Conflict — another getUpdates caller holds the slot; re-polling'));
+        delay = 250;
       } else {
         const up = await res.json().catch(() => ({ result: [] }));
         if (up.ok === false) {

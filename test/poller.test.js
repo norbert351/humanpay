@@ -23,7 +23,7 @@ test('poller: swallows nothing — a transport error is logged and retried', asy
   } finally { globalThis.fetch = realFetch; }
 });
 
-test('poller: a 409 (another poller owns the slot) is logged and backed off, not fatal', async () => {
+test('poller: a 409 re-polls QUICKLY (does not back off — probes must not starve it)', async () => {
   const logs = [];
   const realFetch = globalThis.fetch;
   let calls = 0;
@@ -33,8 +33,10 @@ test('poller: a 409 (another poller owns the slot) is logged and backed off, not
     await sleep(1500);
     p.stop();
     assert.ok(logs.some((l) => /409/.test(l)), 'a 409 must be surfaced in the log');
-    // with backoff, a 1500ms window must NOT produce a hot loop of calls
-    assert.ok(calls <= 4, `backoff should throttle retries, got ${calls} calls`);
+    // Telegram terminates the OLDER poll, so the right move is to re-poll promptly
+    // and reclaim the slot. Backing off here meant an external probe knocked the
+    // bot out for ~30s and it looked dead to the next probe.
+    assert.ok(calls >= 2, `a 409 should trigger a quick re-poll, got ${calls} calls in 1.5s`);
   } finally { globalThis.fetch = realFetch; }
 });
 
