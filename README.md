@@ -108,12 +108,21 @@ Every claim in this README is verifiable with `curl` against the live service �
 | `GET /receipts`, `GET /receipts/:id`, `GET /proof` | the tamper-evident hash-chained ledger + chain verification |
 | `POST /limits`, `POST /pay` | single-operator bounded-pay path (policy kernel, ERC-8021-tagged settlement) |
 
-## Status & honest limits
+## Status & honest limits (2026-09-12 — REAL settlement verified)
 
-- **Implemented + tested:** 35 hermetic tests green — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API, Telegram transport, P2P user-funded tips (self-custody + DEV), x402 EIP-3009 signer (verified USAT domain), SelfRegistry gate, rail-readiness.
-- **Live-verified:** SelfAgentRegistry proxy deployed on mainnet ✓ · x402 `/settle` endpoint reachable (real unauthorized contract) ✓ · USAT token + EIP-3009 domain confirmed on-chain ✓ · **Telegram bot `@tokenscanner2_bot` online + polling** ✓ (live `/start /rail /limit /pay /status`).
-- **Honest rail state right now (see `GET /rails` or `/rail`):** settlement = SIM, self = MOCK, executor balance = **0 CELO / 0 USAT** (re-verified on-chain 2026-09-04).
-- **To move real USAT:** (1) fund the executor wallet `0x3360DA7D976D7ED5Fe79Ee8022f539fb9af8f7C2` with CELO (gas) + USAT (the value that leaves it), (2) create an x402 API key at x402.celo.org by signing a message with that wallet → set `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT` → settlement flips LIVE. (3) For real proof-of-human, register a **Self Agent ID** (QR scan in the Self app) → set `SELF_AGENT_ID` → self gate flips LIVE.
-- **Deploy:** `render.yaml` runs the combined server (`src/server.js`) on one durable free web service — the bot's open long-poll keeps the instance awake, so API + Telegram stay live for judges. The heavy `@selfxyz/core` ZK lib is documented-not-installed (too big for this 3.6 GB VM); the lightweight on-chain agent gate is the shipping path.
+- **Implemented + tested:** **42 hermetic tests green** — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API (incl. the P2P lane + `/attribution`), Telegram transport, P2P self-custody + DEV tips, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement**, SelfRegistry gate, rail-readiness.
+- **✅ REAL VALUE MOVED ON CELO MAINNET** (the thing this hackathon scores):
+  | Tx | What | Rail |
+  |---|---|---|
+  | `0xb4d75077…d3d5` | 0.10 USAT executor → recipient | x402 facilitator (gas sponsored) |
+  | `0x2286bf54…5a27` | 1.00 USAT executor → operator | x402 facilitator |
+  | `0x60049376…5b54` | 0.25 USAT sender → peer (**P2P**) | x402 facilitator |
+  | `0xc58f7f9b…7422` | 0.05 USAT (**ERC-8021 tagged**) | celo-direct-tagged |
+  | `0xe2a94c11…77bc` | 0.15 USAT P2P, on-chain tag `celo_131f6e57e5b5` verified via `fromDataSuffix` | celo-direct-tagged |
+- **✅ Live:** settlement rail = `X402FacilitatorSettlement` (`apiKeySet: true`), executor `0x3360DA…f7C2` funded with USAT + CELO, Telegram `@tokenscanner2_bot` polling, Render deploy current.
+- **✅ ERC-8004 identity:** agent **ID 9836** minted on the rotated operator `0x10b4…A4A6` (the old #9813 was owned by the compromised wallet). `ownerOf(9836)` verified; card at `agents/humanpay.json`.
+- **⚠️ Attribution caveat (important, judge-facing):** the x402 facilitator builds and broadcasts the settlement calldata itself, so a **facilitator-relayed payment can never carry the ERC-8021 data suffix** — the x402 spec has no data-suffix concept at all. Since the leaderboard credits only tagged txs, `settleTagged()` submits the *same* EIP-3009 authorization directly from the executor with the tag appended (executor pays ~0.001 CELO gas). `/attribution` reports which settlements are actually credited.
+- **⚠️ Self proof-of-human is still `MOCK`.** The on-chain `SelfRegistryGate` is implemented and wired; it needs a **Self Agent ID registration (QR scan in the Self app, human-in-the-loop)** → set `SELF_AGENT_ID` and the gate flips LIVE automatically. This is the one rail still simulated.
+- **✅ Three real defects found and fixed while proving the live rail** (all invisible under the default `SimulatedSettlement`): a `JSON.stringify` BigInt crash, a wrong flat payment-payload shape (rejected as the misleading `unsupported_scheme`), and a **1e6 unit bug** that submitted every settlement 1,000,000× too large (surfacing as `insufficient_funds`).
 
-Sources: agent-drain incidents (Algo Alpha, Forbes, TRM Labs), Celo Agents at Work rules (celobuilders.xyz), Celo docs (Self, x402), `@celo/attribution-tags`, USAT mainnet verification (cast + EIP-3009 eth_call).
+Sources: agent-drain incidents (Algo Alpha, Forbes, TRM Labs), Celo Agents at Work rules (celobuilders.xyz), Celo docs (Self, x402), `@celo/attribution-tags`, x402 spec v2 (`specs/x402-specification-v2.md`), USAT mainnet verification (cast + EIP-3009 eth_call).
