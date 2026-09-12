@@ -61,8 +61,22 @@ export class X402FacilitatorSettlement {
   /** Current API key (facilitator.connect() is a wallet-sign UI on x402.celo.org). */
   key() { return this.apiKey; }
 
-  /** Atomic USAT amount. */
-  toAtomic(micro, decimals = 6) { return BigInt(micro) * 10n ** BigInt(decimals); }
+  /**
+   * Atomic USAT amount.
+   *
+   * UNIT CONVENTION (project-wide, see constants.js `MICRO`): `amountMicro` is
+   * ALREADY atomic — callers convert USAT -> micro with `amount * 1_000_000`
+   * (src/p2p.js `micro()`), and USAT has 6 decimals, so micro === atomic.
+   * This used to multiply by 10^decimals AGAIN, inflating every real settlement
+   * by 1e6 (0.10 USAT was submitted as 100,000 USAT) — which surfaced as
+   * `insufficient_funds` from the facilitator, not as an obvious unit error.
+   * Kept as a named seam so a non-6-decimal token can still override `decimals`.
+   */
+  toAtomic(micro, decimals = USAT_DECIMALS) {
+    const m = BigInt(micro);
+    if (decimals === USAT_DECIMALS) return m; // already atomic
+    return (m / 10n ** BigInt(USAT_DECIMALS)) * 10n ** BigInt(decimals);
+  }
 
   /** Sign an EIP-3009 TransferWithAuthorization (gasless). Returns typed-data + sig. */
   async signTransferAuthorization({ amountMicro, payTo, token, chainId, nonce }) {
@@ -86,26 +100,93 @@ export class X402FacilitatorSettlement {
   }
 
   /**
+   * Build the x402 v2 `PaymentPayload` the facilitator expects.
+   * Spec: specs/x402-specification-v2.md §5.1/§7 + specs/schemes/exact/scheme_exact_evm.md
+   * (EIP-3009 method). The /settle and /verify bodies are:
+   *   { x402Version: 2,
+   *     paymentPayload: { x402Version, resource, accepted:{scheme,network,amount,
+   *       asset,payTo,maxTimeoutSeconds,extra:{name,version}}, payload:{signature,
+   *       authorization:{from,to,value,validAfter,validBefore,nonce}} },
+   *     paymentRequirements: { scheme, network, amount, asset, payTo,
+   *       maxTimeoutSeconds, extra:{name,version} } }
+   * Everything that matters is the NESTED `accepted.scheme === 'exact'` plus the
+   * sibling `paymentRequirements` — a flat payload (or one without
+   * paymentRequirements) is rejected with `unsupported_scheme`, which is a
+   * misleading error: it means "I could not find a scheme in the expected place",
+   * NOT "you sent a scheme I don't support".
+   */
+  buildPaymentPayload({ typedData, signature, payTo, amountMicro }) {
+    const m = typedData.message;
+    const amount = String(this.toAtomic(amountMicro));
+    const base = {
+      scheme: 'exact',
+      network: `eip155:${this.domain.chainId}`,
+      amount,
+      asset: this.usatAddress,
+      payTo: payTo.toLowerCase(),
+      maxTimeoutSeconds: 3600,
+      extra: { name: this.domain.name, version: this.domain.version },
+    };
+    return {
+      x402Version: 2,
+      paymentPayload: {
+        x402Version: 2,
+        resource: { url: tagResource(payTo, amountMicro), description: 'HumanPay P2P settlement', mimeType: 'application/json' },
+        accepted: { ...base, extra: { assetTransferMethod: 'eip3009', ...base.extra } },
+        payload: {
+          signature,
+          authorization: {
+            from: m.from,
+            to: m.to,
+            value: String(m.value),
+            validAfter: String(m.validAfter),
+            validBefore: String(m.validBefore),
+            nonce: m.nonce,
+          },
+        },
+      },
+      paymentRequirements: base,
+    };
+  }
+
+  /** POST a payment payload to the facilitator /settle and normalise the response. */
+  async _settle(body, amountMicro, payTo) {
+    const resp = await fetch(`${this.facilitatorUrl}/settle`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': this.apiKey },
+      body: JSON.stringify(body),
+    });
+    const data = await resp.json().catch(async () => ({ raw: await resp.text() }));
+    if (!resp.ok || data.success === false) {
+      throw new Error(`x402 settle failed (${resp.status}): ${data.errorReason || data.errorMessage || data.invalidReason || data.error || data.message || JSON.stringify(data)}`);
+    }
+    return {
+      source: 'x402-facilitator', settled: data.success ?? data.settled ?? true,
+      txHash: data.transaction || data.txHash, credits: data.credits,
+      payment: body, tag: TAG, amountMicro: String(amountMicro), payTo,
+    };
+  }
+
+  /**
+   * JSON-safe view of a payment payload. The typed-data `message` carries BigInts
+   * (value / validAfter / validBefore) and `JSON.stringify` throws on them — which
+   * crashed the REAL settlement path before it ever reached the facilitator
+   * (the SimulatedSettlement path never serialized, so tests stayed green).
+   * Stringify every BigInt to its decimal form; the facilitator accepts strings.
+   */
+  static jsonSafe(payment) {
+    return JSON.parse(JSON.stringify(payment, (k, v) => (typeof v === 'bigint' ? v.toString() : v)));
+  }
+
+  /**
    * Settle a payment through the facilitator. Credit is consumed per settlement.
    * Returns the facilitator response. On mainnet this MOVES the executor's USAT
    * to payTo (buyer -> merchant directly; facilitator never holds funds).
    */
   async pay({ amountMicro, payTo, token = 'USAT', chainId = 42220, nonce, _creditsPrepaidAt } = {}) {
     const { typedData, signature } = await this.signTransferAuthorization({ amountMicro, payTo, token, chainId, nonce });
-    // Append the ERC-8021 attribution code as a settlement annotation (string form).
-    const payment = {
-      ...typedData,
-      signature,
-      resource: tagResource(payTo, amountMicro),
-    };
-    const resp = await fetch(`${this.facilitatorUrl}/settle`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': this.apiKey },
-      body: JSON.stringify({ network: 'celo', payment: JSON.stringify(payment) }),
-    });
-    const data = await resp.json().catch(async () => ({ raw: await resp.text() }));
-    if (!resp.ok) throw new Error(`x402 settle failed (${resp.status}): ${data.error || data.message || JSON.stringify(data)}`);
-    return { source: 'x402-facilitator', settled: data.settled ?? true, txHash: data.txHash ?? data.transaction, credits: data.credits, payment, tag: TAG };
+    const payment = this.buildPaymentPayload({ typedData, signature, payTo, amountMicro });
+    return this._settle(payment, amountMicro, payTo);
   }
 
   /** Resolve the signing account for a payment: per-tip signer if given, else the executor. */
@@ -153,21 +234,14 @@ export class X402FacilitatorSettlement {
   async settleWithSignature({ typedData, signature }) {
     if (!signature || !/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new Error('PAYMENT-SIGNATURE: invalid signature');
     const value = BigInt(typedData.message.value);
-    const amountMicro = value / 10n ** BigInt(USAT_DECIMALS);
+    const amountMicro = value; // amountMicro IS atomic for 6-decimal USAT (see toAtomic)
     const payTo = typedData.message.to;
     return this._relay({ typedData, signature, payTo, amountMicro });
   }
 
   async _relay({ typedData, signature, payTo, amountMicro }) {
-    const payment = { ...typedData, signature, resource: tagResource(payTo, amountMicro) };
-    const resp = await fetch(`${this.facilitatorUrl}/settle`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-API-Key': this.apiKey },
-      body: JSON.stringify({ network: 'celo', payment: JSON.stringify(payment) }),
-    });
-    const data = await resp.json().catch(async () => ({ raw: await resp.text() }));
-    if (!resp.ok) throw new Error(`x402 settle failed (${resp.status}): ${data.error || data.message || JSON.stringify(data)}`);
-    return { source: 'x402-facilitator', settled: data.settled ?? true, txHash: data.txHash ?? data.transaction, credits: data.credits, payment, tag: TAG };
+    const payment = this.buildPaymentPayload({ typedData, signature, payTo, amountMicro });
+    return this._settle(payment, amountMicro, payTo);
   }
 }
 
