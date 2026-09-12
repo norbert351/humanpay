@@ -136,6 +136,16 @@ export class P2PTeleMessageHandler {
       token: 'USAT', chainId: 42220, ts: Date.now(), note: note.join(' '), from: sender.wallet,
     };
 
+    // Pre-flight the budget BEFORE asking anyone to sign. The self-custody path
+    // used to skip this, so an over-cap tip returned a signing request and the
+    // BLOCK only happened at /tipsign — i.e. the agent asked a human to authorize
+    // a payment it should have refused outright. Refuse first; receipt the block.
+    const preflight = await sender.engine.peekBudget({ amountMicro: amt, payTo: recv.wallet, token: 'USAT', chainId: 42220 });
+    if (!preflight.allow) {
+      this.receipts.append({ decision: 'block', reason: preflight.reason, request: req, settlement: null });
+      return `blocked: ${preflight.reason}`;
+    }
+
     // DEV-mode auto-sign from the sender's OWN wallet (no central executor).
     if (sender.devKey) {
       const { signAuth } = await import('./p2pSign.js');

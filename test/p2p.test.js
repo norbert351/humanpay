@@ -109,11 +109,19 @@ test('blocks: unregistered recipient, self-tip, over-cap, bad /tipsign signature
   const over = await h.handle('/tip 1 @bob', { chatId: '1001' }); // 4 > 3 total
   assert.match(over, /blocked: OVER_TOTAL_CAP/);
 
-  // bad /tipsign: sign with WRONG key
-  h.handle('/key', { chatId: '1001' }); // no-op to keep pending? need to rebuild pending in self-custody: remove dev key
+  // bad /tipsign: sign with WRONG key.
+  // NOTE: to reach the self-custody pending state the tip must be IN CAP, so give
+  // alice headroom first (total cap 3 is already spent above). An over-cap tip is
+  // now refused at /tip time and never produces a pending request — that refusal
+  // is asserted separately in test/preflight.test.js.
+  h.handle('/key', { chatId: '1001' }); // clear the dev key -> self-custody path
   const aliceUser = h.registry.get('1001');
   aliceUser.devKey = null;
-  await h.handle('/tip 1 @bob', { chatId: '1001' }); // pending self-custody
+  // grant headroom by rolling the daily window: reset the spent counters directly
+  aliceUser.engine.spentTotal = 0n;
+  aliceUser.engine.spentToday = 0n;
+  const pending = await h.handle('/tip 1 @bob', { chatId: '1001' });
+  assert.match(pending, /self-custody tip/, 'in-cap tip returns a signing request');
   const pend = h.pending.get('1001');
   const wrong = await privateKeyToAccount(makeA().key).signTypedData(pend.typedData);
   const bad = await h.handle('/tipsign ' + wrong, { chatId: '1001' });

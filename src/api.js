@@ -24,7 +24,13 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
       const readBody = () => new Promise((resolve, reject) => {
         let data = '';
         req.on('data', (c) => (data += c));
-        req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch (e) { reject(e); } });
+        req.on('end', () => {
+          try { resolve(data ? JSON.parse(data) : {}); }
+          // Malformed client input is a 400, NOT a 500 — the generic catch below
+          // would otherwise report a server error for a bad request body.
+          catch (e) { const err = new Error(`invalid JSON body: ${e.message}`); err.statusCode = 400; reject(err); }
+        });
+        req.on('error', (e) => { const err = new Error(`request stream error: ${e.message}`); err.statusCode = 400; reject(err); });
       });
 
       if (req.method === 'GET' && u.pathname === '/health') {
@@ -148,7 +154,9 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
         result = { code: 200, body: { receipt: receipts.append({ decision: 'block', reason: b.reason, request: b, settlement: null }) } };
       }
     } catch (e) {
-      result = { code: 500, body: { error: e.message } };
+      // Honour an explicit statusCode (e.g. 400 for a malformed body); anything
+      // genuinely unexpected stays a 500.
+      result = { code: e.statusCode || 500, body: { error: e.message } };
     }
     json(res, result);
   });

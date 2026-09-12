@@ -98,6 +98,28 @@ export class SpendPolicyEngine {
     return this._budgetAllow(amt, payTo, token, chainId);
   }
 
+  /**
+   * READ-ONLY budget peek: same validation as checkBudget but reserves NOTHING.
+   * Used to refuse a payment BEFORE asking a human to sign it, without
+   * double-counting the spend when /tipsign validates again for real.
+   */
+  async peekBudget({ amountMicro, payTo, token, chainId }) {
+    if (!this.limit) return { allow: false, reason: 'NO_LIMIT' };
+    const amt = BigInt(amountMicro);
+    if (token !== USAT) return { allow: false, reason: `TOKEN_NOT_ALLOWED:${token}` };
+    if (Number(chainId) !== Number(CHAIN_ID)) return { allow: false, reason: `CHAIN_NOT_ALLOWED:${chainId}` };
+    if (amt <= 0n) return { allow: false, reason: 'NON_POSITIVE_AMOUNT' };
+    if (amt > this.limit.perTxMaxMicro) return { allow: false, reason: 'OVER_PER_TX_CAP' };
+    const nowDay = this.dayOffset();
+    const spentToday = this.epoch === nowDay ? this.spentToday : 0n;
+    if (spentToday + amt > this.limit.dayCapMicro) return { allow: false, reason: 'OVER_DAY_CAP' };
+    if (this.spentTotal + amt > this.limit.totalCapMicro) return { allow: false, reason: 'OVER_TOTAL_CAP' };
+    if (!this.limit.allowAny && !this.limit.allowlist.includes(payTo.toLowerCase())) {
+      return { allow: false, reason: 'PAYTO_NOT_ALLOWED' };
+    }
+    return { allow: true, peek: true, spentToday, spentTotal: this.spentTotal };
+  }
+
   /** Shared per-tx / daily / lifetime / allowlist cap check; reserves spend on ALLOW. */
   _budgetAllow(amt, payTo, token, chainId) {
     // 4. per-tx cap
