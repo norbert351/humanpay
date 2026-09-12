@@ -211,14 +211,30 @@ export class P2PTeleMessageHandler {
     // builds its own calldata, so a facilitator relay can never carry our
     // ERC-8021 tag — and the leaderboard counts ONLY tagged txs. The direct path
     // submits the same signed authorization with the tag appended (executor pays
-    // gas, ~0.001 CELO). Falls back to the relay if the rail is sim/unsupported.
+    // gas, ~0.001 CELO).
+    //
+    // The tagged path is retried a few times before falling back, because a
+    // fallback means the settlement is UNTAGGED and therefore NOT CREDITED — the
+    // reply says so explicitly rather than hiding it.
     let settled;
     if (typeof this.settlement.settleTagged === 'function') {
-      try {
-        settled = await this.settlement.settleTagged({ typedData, signature, amountMicro: req.amountMicro, payTo: req.payTo });
-      } catch (e) {
+      let lastErr;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          settled = await this.settlement.settleTagged({ typedData, signature, amountMicro: req.amountMicro, payTo: req.payTo });
+          break;
+        } catch (e) {
+          lastErr = e;
+          const msg = e.shortMessage || e.message || '';
+          // A non-executor authorizer or an already-consumed authorization will
+          // never succeed on retry — stop early and let the relay try.
+          if (/requires the executor|auth invalid|already used/i.test(msg)) break;
+          if (attempt < 3) await new Promise((r) => setTimeout(r, 1200 * attempt));
+        }
+      }
+      if (!settled) {
         settled = await this.settlement.settleWithSignature({ typedData, signature });
-        settled.fallbackReason = e.message;
+        settled.fallbackReason = lastErr ? (lastErr.shortMessage || lastErr.message) : 'unknown';
       }
     } else {
       settled = await this.settlement.settleWithSignature({ typedData, signature });

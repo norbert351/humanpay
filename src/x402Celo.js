@@ -285,7 +285,24 @@ export class X402FacilitatorSettlement {
       args: [m.from, m.to, BigInt(m.value), BigInt(m.validAfter), BigInt(m.validBefore), m.nonce, signature],
     });
     const data = taggedCall(base); // ERC-8021 tag appended to the calldata
-    const hash = await this.wallet.sendTransaction({ to: this.usatAddress, data, account: this.executor });
+    // Transaction-nonce safety: back-to-back settlements can race, and viem may
+    // reuse a cached nonce that is already consumed ("Nonce provided for the
+    // transaction is lower than the current"). Read the PENDING nonce explicitly
+    // and retry once on that specific error before giving up.
+    const send = async () => {
+      const txNonce = await this.publicClient.getTransactionCount({ address: this.executor.address, blockTag: 'pending' });
+      return this.wallet.sendTransaction({ to: this.usatAddress, data, account: this.executor, nonce: txNonce });
+    };
+    let hash;
+    try {
+      hash = await send();
+    } catch (e) {
+      const msg = e.shortMessage || e.message || '';
+      if (/nonce/i.test(msg)) {
+        await new Promise((r) => setTimeout(r, 1500));
+        hash = await send(); // re-read the pending nonce and retry once
+      } else throw e;
+    }
     const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
     if (receipt.status !== 'success') throw new Error(`tagged settle reverted: ${hash}`);
     return {
