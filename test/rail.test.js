@@ -63,3 +63,18 @@ test('rail: railStatusLine shows READY funding + LIVE rails when all present', (
   assert.match(line, /LIVE registry/);
   assert.match(line, /PROOF OK/);
 });
+
+test('rail: /rail names the SPENDER wallet + role (executor, not operator) in the funding line', () => {
+  const st = {
+    operator: '0x10b4064504D3d0D400A607164190B04dE679A4A6',
+    rails: {
+      // The executor holds the money that moves; the operator merely authorizes.
+      funding: { celo: 1, usat: 2.058, wallet: '0x3360DA7D976D7ED5Fe79Ee8022f539fb9af8f7C2', role: 'executor' },
+      settlement: { live: true, apiKeySet: true, executor: '0x3360DA7D976D7ED5Fe79Ee8022f539fb9af8f7C2' },
+      self: { live: false, agentId: null },
+    },
+  };
+  const line = railStatusLine(st);
+  assert.match(line, /executor 0x3360DA7D976D7ED5Fe79Ee8022f539fb9af8f7C2/, 'funding line names the executor wallet');
+  assert.match(line, /READY/, 'executor-funded rail reads READY');
+});

@@ -28,14 +28,20 @@ export async function railStatus({ operatorAddress, settlement, selfGate, regist
   const out = { chainId: CHAIN_ID, operator: operatorAddress || null, ts: Date.now(), rails: {} };
 
   // ---- Funding (the hard gate: 0 CELO / 0 USAT = real settlement impossible) ----
+  // CRITICAL: the wallet that actually MOVES money is the EXECUTOR (the x402
+  // signer/spender) — not the operator (which merely authorizes). Reading the
+  // operator reported "NEEDS CELO+USAT" while 2.058 USAT sat funded at the
+  // executor. Prefer the executor whenever the rail exposes one.
+  const spender = settlement?.executor?.address || operatorAddress;
+  out.spender = spender;
   try {
-    const celoWei = await pub.getBalance({ address: operatorAddress });
-    out.rails.funding = { celo: Number(formatUnits(celoWei, 18)), usat: null };
+    const celoWei = await pub.getBalance({ address: spender });
+    out.rails.funding = { celo: Number(formatUnits(celoWei, 18)), usat: null, wallet: spender, role: settlement?.executor?.address ? 'executor' : 'operator' };
   } catch (e) {
-    out.rails.funding = { celo: null, usat: null, err: (e.shortMessage || e.message || '').slice(0, 80) };
+    out.rails.funding = { celo: null, usat: null, wallet: spender, err: (e.shortMessage || e.message || '').slice(0, 80) };
   }
   try {
-    const usatAtomic = await pub.readContract({ address: USAT_ADDRESS, abi: ERC20_BAL_ABI, functionName: 'balanceOf', args: [operatorAddress] });
+    const usatAtomic = await pub.readContract({ address: USAT_ADDRESS, abi: ERC20_BAL_ABI, functionName: 'balanceOf', args: [spender] });
     out.rails.funding.usat = Number(formatUnits(usatAtomic, USAT_DECIMALS));
   } catch (e) {
     out.rails.funding.usatErr = (e.shortMessage || e.message || '').slice(0, 80);
@@ -87,7 +93,7 @@ export function railStatusLine(s) {
   const fmt = (n) => (typeof n === 'number' ? `$${n}` : n);
   const lines = [
     `operator ${s.operator}`,
-    `funding  CELO ${f.celo ?? 'n/a'} · USAT ${f.usat ?? 'n/a'}  (${typeof f.usat === 'number' && f.usat > 0 && f.celo > 0 ? 'READY' : 'NEEDS CELO+USAT'})`,
+    `funding  ${f.role || 'operator'} ${f.wallet || ''} → CELO ${f.celo ?? 'n/a'} · USAT ${f.usat ?? 'n/a'}  (${typeof f.usat === 'number' && f.usat > 0 && f.celo > 0 ? 'READY' : 'NEEDS CELO+USAT'})`,
     `settle   ${se.live ? 'LIVE x402' : 'SIM'} · apiKey ${se.apiKeySet ? 'set' : 'MISSING'} · ${se.live ? `executor ${se.executor}` : 'credits none'}`,
     `self     ${self.live ? 'LIVE registry' : 'MOCK'} · agentId ${self.agentId || 'MISSING'}${self.live ? (self.hasHumanProof && self.isProofFresh ? ' · PROOF OK' : ' · proof not OK') : ''}`,
   ];
