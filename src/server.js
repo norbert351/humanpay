@@ -17,6 +17,7 @@ const server = createHumanPayApp({
   selfGate: rt.selfGate,
   settlement: rt.settlement,
   receipts: rt.receipts,
+  registry: rt.registry,
 });
 
 server.listen(PORT, () => {

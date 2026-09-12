@@ -2,7 +2,7 @@
 export const CHAIN_ID = 42220;                 // Celo mainnet
 export const CELO_RPC = 'https://forno.celo.org';
 export const ATTRIBUTION_TAG = 'celo_131f6e57e5b5';   // assigned at registration, locked
-export const AGENT_WALLET = '0x73b16058d57a6337060677496d4A8e97A9554539'; // agentWalletAddress + ERC-8004 #9813 owner
+export const AGENT_WALLET = '0x10b4064504D3d0D400A607164190B04dE679A4A6'; // operator wallet (rotated off compromised 0x73b1…4539)
 export const USAT = 'USAT';
 export const MICRO = 1_000_000n;               // 1 unit = 1e6 micro (integer math only)
 

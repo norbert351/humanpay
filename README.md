@@ -1,7 +1,7 @@
 # HumanPay — bounded auto-pay agent
 
 Celo **Agents at Work 2026** · tracks `real-world-adoption` + `judges-favorite` · bounties `best-real-world-adoption`, `best-stablecoin-adoption`, `judges-favorite`
-ERC-8021 tag: **`celo_131f6e57e5b5`** · ERC-8004 agent #9813 · agent wallet `0x73b16058d57a6337060677496d4A8e97A9554539`
+ERC-8021 tag: **`celo_131f6e57e5b5`** · agent wallet `0x10b4064504D3d0D400A607164190B04dE679A4A6`
 
 > Your agent pays small real asks (tips, gigs, subs) in USAT over x402 — but only
 > after proof-of-human (Self), only up to a **spend-limit you set once**, never
@@ -60,7 +60,7 @@ The settlement rail is a seam: default `SimulatedSettlement` (no mainnet gas, he
 
 ```bash
 npm install
-npm test                          # 26 hermetic tests
+npm test                          # 35 hermetic tests
 OPERATOR_ADDRESS=<0x…> npm start  # HTTP API (:8080)
 OP_OPERATOR_PK=<0x…> npm run bot  # Telegram bot (transcript mode w/o token; live polling with TELEGRAM_BOT_TOKEN)
 OP_OPERATOR_PK=<0x…> npm run serve  # combined: HTTP API + Telegram bot in ONE process (Render / durable PaaS)
@@ -92,12 +92,28 @@ The anti-drain spine is now **per-user**: each user's self-set spend caps bound 
 ### Rail readiness (`/rails` API + `/rail` Telegram)
 `src/railcheck.js` reads live state — executor CELO + USAT balances on-chain, settlement rail class + key presence, Self agent state — so you (or a judge) can see in one call exactly what is LIVE vs SIM vs BLOCKED and what to fund/enable.
 
+## HTTP surface (judge-inspectable)
+
+Every claim in this README is verifiable with `curl` against the live service — no Telegram client needed:
+
+| Route | What it proves |
+|---|---|
+| `GET /` | landing/status: tag, chain, endpoint index |
+| `GET /health` | live operator address + peer count |
+| `GET /rails` | honest SIM/MOCK/LIVE labels for settlement + Self, funding balances, peer roster |
+| `GET /users` | the P2P roster **= the payTo allowlist** (the anti-drain rule made visible) |
+| `GET /users/:chatId\|@handle\|0x…` | one peer's wallet + registered bound policy |
+| `POST /users` | register a wallet into the allowlist |
+| `POST /tip/offline-auth` | returns the EIP-3009 `TransferWithAuthorization` typed-data the **sender** signs (self-custody) |
+| `GET /receipts`, `GET /receipts/:id`, `GET /proof` | the tamper-evident hash-chained ledger + chain verification |
+| `POST /limits`, `POST /pay` | single-operator bounded-pay path (policy kernel, ERC-8021-tagged settlement) |
+
 ## Status & honest limits
 
-- **Implemented + tested:** 31 hermetic tests green — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API, Telegram transport, P2P user-funded tips (self-custody + DEV), x402 EIP-3009 signer (verified USAT domain), SelfRegistry gate, rail-readiness.
+- **Implemented + tested:** 35 hermetic tests green — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API, Telegram transport, P2P user-funded tips (self-custody + DEV), x402 EIP-3009 signer (verified USAT domain), SelfRegistry gate, rail-readiness.
 - **Live-verified:** SelfAgentRegistry proxy deployed on mainnet ✓ · x402 `/settle` endpoint reachable (real unauthorized contract) ✓ · USAT token + EIP-3009 domain confirmed on-chain ✓ · **Telegram bot `@tokenscanner2_bot` online + polling** ✓ (live `/start /rail /limit /pay /status`).
 - **Honest rail state right now (see `GET /rails` or `/rail`):** settlement = SIM, self = MOCK, executor balance = **0 CELO / 0 USAT** (re-verified on-chain 2026-09-04).
-- **To move real USAT:** (1) fund the executor/agent wallet `0x73b1…4539` with CELO (gas) + USAT (the value that leaves it), (2) create an x402 API key at x402.celo.org by signing a message with that wallet → set `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT` → settlement flips LIVE. (3) For real proof-of-human, register a **Self Agent ID** (QR scan in the Self app) → set `SELF_AGENT_ID` → self gate flips LIVE.
+- **To move real USAT:** (1) fund the executor wallet `0x3360DA7D976D7ED5Fe79Ee8022f539fb9af8f7C2` with CELO (gas) + USAT (the value that leaves it), (2) create an x402 API key at x402.celo.org by signing a message with that wallet → set `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT` → settlement flips LIVE. (3) For real proof-of-human, register a **Self Agent ID** (QR scan in the Self app) → set `SELF_AGENT_ID` → self gate flips LIVE.
 - **Deploy:** `render.yaml` runs the combined server (`src/server.js`) on one durable free web service — the bot's open long-poll keeps the instance awake, so API + Telegram stay live for judges. The heavy `@selfxyz/core` ZK lib is documented-not-installed (too big for this 3.6 GB VM); the lightweight on-chain agent gate is the shipping path.
 
 Sources: agent-drain incidents (Algo Alpha, Forbes, TRM Labs), Celo Agents at Work rules (celobuilders.xyz), Celo docs (Self, x402), `@celo/attribution-tags`, USAT mainnet verification (cast + EIP-3009 eth_call).

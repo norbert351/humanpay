@@ -34,7 +34,7 @@ test('x402: explicit usatAddress/domainName still override the default', () => {
 
 test('rail: railStatusLine renders honest /rail text (sim/unfunded)', () => {
   const st = {
-    operator: '0x73b16058d57a6337060677496d4A8e97A9554539',
+    operator: '0x10b4064504D3d0D400A607164190B04dE679A4A6',
     rails: {
       funding: { celo: 0, usat: 0 },
       settlement: { live: false, apiKeySet: false, executor: null },
@@ -50,10 +50,10 @@ test('rail: railStatusLine renders honest /rail text (sim/unfunded)', () => {
 
 test('rail: railStatusLine shows READY funding + LIVE rails when all present', () => {
   const st = {
-    operator: '0x73b16058d57a6337060677496d4A8e97A9554539',
+    operator: '0x10b4064504D3d0D400A607164190B04dE679A4A6',
     rails: {
       funding: { celo: 2.5, usat: 10 },
-      settlement: { live: true, apiKeySet: true, executor: '0x73b1' },
+      settlement: { live: true, apiKeySet: true, executor: '0x10b4' },
       self: { live: true, agentId: '9813', hasHumanProof: true, isProofFresh: true },
     },
   };
