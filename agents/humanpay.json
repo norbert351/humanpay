@@ -1,11 +1,28 @@
 {
   "type": "https://eips.ethereum.org/EIPS/eip-8004#registration-v1",
   "name": "HumanPay Agent",
-  "description": "Sybil-resistant stablecoin micro-payments on Celo: prove you are human (Self), then pay in USAT with gas in the token (fee abstraction), settling over x402.",
+  "description": "Sybil-resistant stablecoin micro-payments on Celo: prove you are human (Self), then pay in USAT with gas in the token (fee abstraction), settling over x402. Every decision lands on a tamper-evident hash-chained receipt.",
   "image": "",
   "active": true,
-  "services": [],
+  "services": [
+    {
+      "name": "web",
+      "endpoint": "https://humanpay.onrender.com/",
+      "description": "HTTP surface: /rails (honest rail readiness), /users (peer roster = payTo allowlist), /proof (receipt chain verification)"
+    },
+    {
+      "name": "telegram",
+      "endpoint": "https://t.me/tokenscanner2_bot",
+      "description": "The channel: /register /key /limit /me /wallet /tip /tipsign"
+    }
+  ],
   "x402Support": true,
-  "registrations": [],
+  "registrations": [
+    {
+      "agentId": 9813,
+      "agentRegistry": "eip155:42220:0x8004A169FB4a3325136EB29fA0ceB6D2e539a432",
+      "note": "original Celo identity (owner 0x73b1…4539 — rotated off after a compromise; retained for history)"
+    }
+  ],
   "supportedTrust": ["reputation"]
 }
