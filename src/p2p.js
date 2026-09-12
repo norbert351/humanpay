@@ -197,10 +197,25 @@ export class P2PTeleMessageHandler {
       return `blocked: ${verdict.reason}`;
     }
 
-    const settled = await this.settlement.settleWithSignature({ typedData, signature });
+    // Prefer the TAGGED DIRECT path when the rail supports it: the facilitator
+    // builds its own calldata, so a facilitator relay can never carry our
+    // ERC-8021 tag — and the leaderboard counts ONLY tagged txs. The direct path
+    // submits the same signed authorization with the tag appended (executor pays
+    // gas, ~0.001 CELO). Falls back to the relay if the rail is sim/unsupported.
+    let settled;
+    if (typeof this.settlement.settleTagged === 'function') {
+      try {
+        settled = await this.settlement.settleTagged({ typedData, signature, amountMicro: req.amountMicro, payTo: req.payTo });
+      } catch (e) {
+        settled = await this.settlement.settleWithSignature({ typedData, signature });
+        settled.fallbackReason = e.message;
+      }
+    } else {
+      settled = await this.settlement.settleWithSignature({ typedData, signature });
+    }
     const receipt = this.receipts.append({ decision: 'allow', reason: null, request: { ...req, signature }, settlement: settled });
     this.pending.delete(key);
-    return `tip ${fmtMicro(req.amountMicro)} USAT ${req.from.slice(0, 6)}… -> ${req.payTo.slice(0, 6)}…\nreceipt ${receipt.id} · tag ${this.tag}${settled.txHash ? `\ntx ${settled.txHash}` : ''}${settled.source ? `\nrail ${settled.source}` : ''}`;
+    return `tip ${fmtMicro(req.amountMicro)} USAT ${req.from.slice(0, 6)}… -> ${req.payTo.slice(0, 6)}…\nreceipt ${receipt.id} · tag ${this.tag}${settled.txHash ? `\ntx ${settled.txHash}` : ''}${settled.source ? `\nrail ${settled.source}` : ''}${settled.fallbackReason ? `\nnote: tagged path unavailable (${settled.fallbackReason.slice(0, 60)}), relayed untagged` : ''}`;
   }
 
   status(ctx) {

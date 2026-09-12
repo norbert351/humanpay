@@ -11,12 +11,28 @@
 // stablecoin "gaslessly for users" — the user signs an authorization, not pays gas.
 import { privateKeyToAccount } from 'viem/accounts';
 import {
-  createWalletClient, http, encodeAbiParameters, hexToBigInt, bytesToHex, keccak256,
+  createWalletClient, http, encodeAbiParameters, encodeFunctionData, hexToBigInt, bytesToHex, keccak256,
   createPublicClient, recoverTypedDataAddress,
 } from 'viem';
 import { taggedCall, TAG } from './attribution.js';
 import { transferAuthTypedData } from './auth.js';
 import { USAT_SIGNER_DOMAIN, USAT_ADDRESS, USAT_DECIMALS } from './constants.js';
+
+// EIP-3009 transferWithAuthorization — used by the TAGGED DIRECT settlement path
+// (the facilitator builds its own calldata, so it can never carry our ERC-8021 tag).
+const TRANSFER_WITH_AUTHORIZATION_ABI_SIG = [{
+  type: 'function', name: 'transferWithAuthorization', stateMutability: 'nonpayable',
+  inputs: [
+    { name: 'from', type: 'address' },
+    { name: 'to', type: 'address' },
+    { name: 'value', type: 'uint256' },
+    { name: 'validAfter', type: 'uint256' },
+    { name: 'validBefore', type: 'uint256' },
+    { name: 'nonce', type: 'bytes32' },
+    { name: 'signature', type: 'bytes' },
+  ],
+  outputs: [],
+}];
 
 // EIP-3009 domain for the Celo-native USAT (Tether America USD). Default verified
 // on-chain 2026-09-04 (signature verifies with name "Tether America USD" and only then).
@@ -56,6 +72,7 @@ export class X402FacilitatorSettlement {
       version: domainVersion || USAT_SIGNER_DOMAIN.version,
     };
     this.wallet = createWalletClient({ account: this.executor, transport: http(rpcUrl) });
+    this.publicClient = createPublicClient({ transport: http(rpcUrl) });
   }
 
   /** Current API key (facilitator.connect() is a wallet-sign UI on x402.celo.org). */
@@ -237,6 +254,45 @@ export class X402FacilitatorSettlement {
     const amountMicro = value; // amountMicro IS atomic for 6-decimal USAT (see toAtomic)
     const payTo = typedData.message.to;
     return this._relay({ typedData, signature, payTo, amountMicro });
+  }
+
+  /**
+   * TAGGED DIRECT SETTLEMENT — the attribution path.
+   *
+   * The facilitator builds and broadcasts the calldata itself, so a settlement
+   * relayed through it can NEVER carry the ERC-8021 tag (verified live: the
+   * resulting tx is a clean transferWithAuthorization with no data suffix, and
+   * fromDataSuffix() returns null). The hackathon leaderboard counts ONLY txs
+   * carrying the assigned tag — so this method submits the SAME EIP-3009
+   * authorization directly, from the executor, with `toDataSuffix(TAG)` appended.
+   * Cost: the executor pays gas (~0.001 CELO on Celo). Benefit: the tx is credited.
+   *
+   * The authorization itself is unchanged (same signature, same EIP-3009
+   * semantics) — only the broadcaster differs, so the anti-drain guarantees hold.
+   */
+  async settleTagged({ typedData, signature, amountMicro, payTo }) {
+    if (!signature || !/^0x[0-9a-fA-F]{130}$/.test(signature)) throw new Error('PAYMENT-SIGNATURE: invalid signature');
+    const m = typedData.message;
+    // The direct path broadcasts from the EXECUTOR's wallet, and EIP-3009 requires
+    // the tx sender to be the authorization's `from` (or an approved party) — so
+    // this path only works when the authorization was signed by the executor.
+    if (m.from.toLowerCase() !== this.executor.address.toLowerCase()) {
+      throw new Error(`tagged path requires the executor to be the authorizer (auth from ${m.from.slice(0,10)}…, executor ${this.executor.address.slice(0,10)}…)`);
+    }
+    const base = encodeFunctionData({
+      abi: TRANSFER_WITH_AUTHORIZATION_ABI_SIG,
+      functionName: 'transferWithAuthorization',
+      args: [m.from, m.to, BigInt(m.value), BigInt(m.validAfter), BigInt(m.validBefore), m.nonce, signature],
+    });
+    const data = taggedCall(base); // ERC-8021 tag appended to the calldata
+    const hash = await this.wallet.sendTransaction({ to: this.usatAddress, data, account: this.executor });
+    const receipt = await this.publicClient.waitForTransactionReceipt({ hash });
+    if (receipt.status !== 'success') throw new Error(`tagged settle reverted: ${hash}`);
+    return {
+      source: 'celo-direct-tagged', settled: true, txHash: hash,
+      tag: TAG, amountMicro: String(amountMicro ?? m.value), payTo,
+      explorer: `https://celoscan.io/tx/${hash}`,
+    };
   }
 
   async _relay({ typedData, signature, payTo, amountMicro }) {
