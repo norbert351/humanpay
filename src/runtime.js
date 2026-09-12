@@ -68,36 +68,78 @@ export function buildRuntime() {
 /**
  * Start the live Telegram long-poll loop. Self-scheduling (never stacks polls).
  * Returns nothing; intended to run for the process lifetime.
+ *
+ * Resilience notes (learned the hard way — the process must never silently stop
+ * owning the getUpdates slot):
+ *  - Errors are retried with EXPONENTIAL BACKOFF (capped), so a transient network
+ *    blip (or this VM's broken IPv6 egress) can't turn into a hot error loop.
+ *  - `409 Conflict` means ANOTHER poller owns the slot (e.g. a stale instance or
+ *    a local `npm run bot`); that needs a longer pause, not a tight retry.
+ *  - The inter-poll delay is deliberately small but non-zero so we re-acquire the
+ *    slot promptly after the 30s long-poll returns.
  */
 export function startBotPoller({ token, handler, log = console.log }) {
   const base = `https://api.telegram.org/bot${token}`;
   let offset = 0;
+  let failures = 0;
+  let stopped = false;
   const send = async (chatId, text) => {
-    await fetch(`${base}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: chatId, text }),
-    });
+    try {
+      await fetch(`${base}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text }),
+      });
+    } catch (e) { log('[humanpay:bot] sendMessage failed', (e && e.message) || e); }
   };
   const onError = (e) => log('[humanpay:bot] poll error', (e && e.message) || e);
   let timer = null;
-  const schedule = async () => {
-    try {
-      const up = await (await fetch(`${base}/getUpdates?timeout=30&offset=${offset}`, { signal: AbortSignal.timeout(70_000) })).json();
-      for (const u of up.result || []) {
-        offset = u.update_id + 1;
-        const m = u.message || u.edited_message;
-        if (!m || !m.text) continue;
-        try {
-          const ctx = { chatId: m.chat && m.chat.id, chat: m.chat, from: m.from };
-          const reply = await handler.handle(m.text, ctx);
-          if (reply) await send(m.chat.id, reply);
-        } catch (e) { onError(e); }
-      }
-    } catch (e) { onError(e); }
-    timer = setTimeout(schedule, 500);
+
+  const schedule = async (delay = 500) => {
+    if (stopped) return;
+    timer = setTimeout(tick, delay);
   };
-  schedule();
+
+  const tick = async () => {
+    if (stopped) return;
+    let delay = 500;
+    try {
+      const res = await fetch(`${base}/getUpdates?timeout=30&offset=${offset}`, { signal: AbortSignal.timeout(70_000) });
+      if (res.status === 409) {
+        // Another poller owns the slot. Back off hard but keep trying, so this
+        // process reclaims the slot as soon as the other one stops.
+        failures++;
+        delay = Math.min(30_000, 2_000 * failures);
+        onError(new Error('409 Conflict — another getUpdates poller is running; backing off'));
+      } else {
+        const up = await res.json().catch(() => ({ result: [] }));
+        if (up.ok === false) {
+          failures++;
+          delay = Math.min(30_000, 1_000 * failures);
+          onError(new Error(`getUpdates not ok: ${up.description || JSON.stringify(up).slice(0, 120)}`));
+        } else {
+          failures = 0;
+          for (const u of up.result || []) {
+            offset = u.update_id + 1;
+            const m = u.message || u.edited_message;
+            if (!m || !m.text) continue;
+            try {
+              const ctx = { chatId: m.chat && m.chat.id, chat: m.chat, from: m.from };
+              const reply = await handler.handle(m.text, ctx);
+              if (reply) await send(m.chat.id, reply);
+            } catch (e) { onError(e); }
+          }
+        }
+      }
+    } catch (e) {
+      failures++;
+      delay = Math.min(30_000, 1_000 * failures); // exponential-ish backoff, capped
+      onError(e);
+    }
+    schedule(delay);
+  };
+
+  schedule(0);
   log(`[humanpay:bot] live polling via ${base.replace(/bot[^:]+:[^/]+/, 'bot…')}…`);
-  return { stop: () => clearTimeout(timer) };
+  return { stop: () => { stopped = true; clearTimeout(timer); } };
 }
