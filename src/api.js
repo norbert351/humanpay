@@ -36,7 +36,7 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
       if (req.method === 'GET' && u.pathname === '/health') {
         // Report the LIVE operator address (not a stale constant) so the health
         // check never misrepresents which wallet the process actually runs as.
-        result = { code: 200, body: { ok: true, tag: ATTRIBUTION_TAG, chainId: CHAIN_ID, agentWallet: engine.operatorAddress && engine.operatorAddress !== '*' ? engine.operatorAddress : AGENT_WALLET, peers: registry ? registry.count() : 0 } };
+        result = { code: 200, body: { ok: true, tag: ATTRIBUTION_TAG, chainId: CHAIN_ID, agentWallet: engine.operatorAddress && engine.operatorAddress !== '*' ? engine.operatorAddress : AGENT_WALLET, peers: registry ? registry.count() : 0, telegram: !!process.env.TELEGRAM_BOT_TOKEN, settlement: settlement?.constructor?.name || null, self: selfGate?.constructor?.name || null } };
       } else if (req.method === 'GET' && u.pathname === '/') {
         // Minimal honest landing surface — judges land on a live status page, not a 404.
         result = { code: 200, body: {
