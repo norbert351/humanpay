@@ -110,7 +110,7 @@ Every claim in this README is verifiable with `curl` against the live service �
 
 ## Status & honest limits (2026-09-12 — REAL settlement verified)
 
-- **Implemented + tested:** **42 hermetic tests green** — policy spine, ERC-8021 attribution, tamper-evident receipts, HTTP API (incl. the P2P lane + `/attribution`), Telegram transport, P2P self-custody + DEV tips, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement**, SelfRegistry gate, rail-readiness.
+- **Implemented + tested:** **66 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement**, SelfRegistry gate, rail-readiness.
 - **✅ REAL VALUE MOVED ON CELO MAINNET** (the thing this hackathon scores):
   | Tx | What | Rail |
   |---|---|---|
@@ -118,11 +118,19 @@ Every claim in this README is verifiable with `curl` against the live service �
   | `0x2286bf54…5a27` | 1.00 USAT executor → operator | x402 facilitator |
   | `0x60049376…5b54` | 0.25 USAT sender → peer (**P2P**) | x402 facilitator |
   | `0xc58f7f9b…7422` | 0.05 USAT (**ERC-8021 tagged**) | celo-direct-tagged |
-  | `0xe2a94c11…77bc` | 0.15 USAT P2P, on-chain tag `celo_131f6e57e5b5` verified via `fromDataSuffix` | celo-direct-tagged |
+  | `0xe2a94c11…77bc` | 0.15 USAT P2P, on-chain tag verified | celo-direct-tagged |
+  | `0xf88ab9b1…8381` | 0.10 USAT P2P, **consecutive tips with unique nonces** | celo-direct-tagged |
+  | `0xa031b7c4…47b2` | 0.10 USAT P2P (proves the nonce fix) | celo-direct-tagged |
 - **✅ Live:** settlement rail = `X402FacilitatorSettlement` (`apiKeySet: true`), executor `0x3360DA…f7C2` funded with USAT + CELO, Telegram `@tokenscanner2_bot` polling, Render deploy current.
 - **✅ ERC-8004 identity:** agent **ID 9836** minted on the rotated operator `0x10b4…A4A6` (the old #9813 was owned by the compromised wallet). `ownerOf(9836)` verified; card at `agents/humanpay.json`.
 - **⚠️ Attribution caveat (important, judge-facing):** the x402 facilitator builds and broadcasts the settlement calldata itself, so a **facilitator-relayed payment can never carry the ERC-8021 data suffix** — the x402 spec has no data-suffix concept at all. Since the leaderboard credits only tagged txs, `settleTagged()` submits the *same* EIP-3009 authorization directly from the executor with the tag appended (executor pays ~0.001 CELO gas). `/attribution` reports which settlements are actually credited.
 - **⚠️ Self proof-of-human is still `MOCK`.** The on-chain `SelfRegistryGate` is implemented and wired; it needs a **Self Agent ID registration (QR scan in the Self app, human-in-the-loop)** → set `SELF_AGENT_ID` and the gate flips LIVE automatically. This is the one rail still simulated.
-- **✅ Three real defects found and fixed while proving the live rail** (all invisible under the default `SimulatedSettlement`): a `JSON.stringify` BigInt crash, a wrong flat payment-payload shape (rejected as the misleading `unsupported_scheme`), and a **1e6 unit bug** that submitted every settlement 1,000,000× too large (surfacing as `insufficient_funds`).
+- **✅ Six real defects found and fixed while proving the live rail** — all were invisible while `SimulatedSettlement` was the default. Four were found in the adversarial verification sweep *after* the first settlements succeeded:
+  1. a `JSON.stringify` BigInt crash that killed settlement before it left the process;
+  2. a wrong flat payment-payload shape (rejected as the misleading `unsupported_scheme`);
+  3. a **1e6 unit bug** that submitted every settlement 1,000,000× too large (surfaced as `insufficient_funds`);
+  4. an **anti-drain hole**: the self-custody `/tip` path handed out a signing request for an *over-cap* payment, so the agent asked a human to authorize what it should have refused (fixed with a read-only `peekBudget` so the spend isn't double-counted);
+  5. **every P2P tip reused the same all-zero EIP-3009 nonce** — the first tip worked and every later one reverted `TetherToken: auth invalid` (verified on-chain: `authorizationState(executor, 0x00…00) === true`); now every authorization gets a unique bytes32;
+  6. malformed JSON returned 500 instead of 400.
 
 Sources: agent-drain incidents (Algo Alpha, Forbes, TRM Labs), Celo Agents at Work rules (celobuilders.xyz), Celo docs (Self, x402), `@celo/attribution-tags`, x402 spec v2 (`specs/x402-specification-v2.md`), USAT mainnet verification (cast + EIP-3009 eth_call).
