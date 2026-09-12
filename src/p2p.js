@@ -54,7 +54,7 @@ export class P2PTeleMessageHandler {
       case '/start': case '/help': return HELP;
       case '/register': return this.register(ctx, rest);
       case '/key': return this.key(ctx, rest);
-      case '/limit': return this.limit(ctx, rest);
+      case '/limit': case '/limits': return this.limit(ctx, rest);
       case '/me': case '/my': return this.me(ctx, rest);
       case '/wallet': return this.wallet(rest);
       case '/tip': return await this.tip(ctx, rest);

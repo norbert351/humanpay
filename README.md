@@ -69,12 +69,12 @@ OP_OPERATOR_PK=<0x…> npm run serve  # combined: HTTP API + Telegram bot in ONE
 ## Real integrations (all wired + live-probed)
 
 ### Telegram transport — the channel
-`src/telegram.js` turns `/limit <perTx> <dayCap> <totalCap> <payTo …>` and `/pay <amount> <payTo>` into the full policy→settle→receipt flow; `bot.mjs` / `src/server.js` long-polls the Bot API when `TELEGRAM_BOT_TOKEN` is set. Commands: `/start /limit /pay /status /rail /proof /receipts`. **Live**: `@tokenscanner2_bot` is polling (verified via 409 — a second `getUpdates` conflicts with the bot's open long-poll). Send `/start`, `/rail`, `/limit`, `/pay`, `/status` to it.
+`src/telegram.js` turns `/limit <perTx> <dayCap> <totalCap> <payTo …>` and `/pay <amount> <payTo>` into the full policy→settle→receipt flow; `bot.mjs` / `src/server.js` long-polls the Bot API when `TELEGRAM_BOT_TOKEN` is set. **Full command set (all verified working):** `/start` `/help` `/register` `/key` `/limit` (= `/limits`) `/me` `/wallet` `/tip` `/tipsign` `/status` `/rail` `/proof` `/receipts`. **Live**: `@tokenscanner2_bot` is polling (verified via 409 — a second `getUpdates` conflicts with the bot's open 30s long-poll). Send any of the above to it.
 
 ### P2P tips — bring your own wallet, tip your people
 The peer lane (`src/p2p.js`) turns HumanPay from one-operator-holds-the-wallet into **user-funded, peer-to-peer**: each user binds their OWN Celo wallet to their chat and tips OTHER registered users through the bot. A tip moves USAT from the **sender's** wallet to the **recipient's** wallet over gasless EIP-3009/x402 — the bot never consolidates funds.
 
-Commands: `/register <0xWallet> [@handle]` · `/key <pk>` (DEV seam) · `/limit <perTx> <dayCap> <totalCap>` · `/me` · `/wallet <@user>` · `/tip <amount> <@user|0xWallet>` · `/tipsign <sig>`.
+Commands: `/register <0xWallet> [@handle]` · `/key <pk>` (DEV seam) · `/limit <perTx> <dayCap> <totalCap>` (also `/limits`) · `/me` · `/wallet <@user>` · `/tip <amount> <@user|0xWallet>` · `/tipsign <sig>`.
 
 Two sign paths, both shipped:
 - **Self-custody (primary):** `/tip` returns the exact EIP-3009 `TransferWithAuthorization` typed-data to sign in the sender's own wallet app; `/tipsign <sig>` relays it. The bot never sees a key — the drain story stays intact.
@@ -110,7 +110,7 @@ Every claim in this README is verifiable with `curl` against the live service �
 
 ## Status & honest limits (2026-09-12 — REAL settlement verified)
 
-- **Implemented + tested:** **66 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement**, SelfRegistry gate, rail-readiness.
+- **Implemented + tested:** **77 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement**, SelfRegistry gate, rail-readiness.
 - **✅ REAL VALUE MOVED ON CELO MAINNET** (the thing this hackathon scores):
   | Tx | What | Rail |
   |---|---|---|
