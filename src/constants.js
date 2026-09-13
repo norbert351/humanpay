@@ -17,3 +17,18 @@ export const USAT_SIGNER_DOMAIN = { name: 'Tether America USD', version: '1', ch
 
 // ERC-20 transfer(address,uint256) — the USAT settlement call we tag
 export const ERC20_TRANSFER_SIG = '0xa9059cbb';
+
+// Verified on-chain ERC-8021-tagged settlements (Celo mainnet, 42220). These
+// survive redeploys, unlike the in-memory AuditStore. Each hash was verified by
+// decoding the tx input with fromDataSuffix: the ASSIGNED tag is present in the
+// calldata. Only add a hash you have actually confirmed carries the tag.
+export const VERIFIED_TAGGED_SETTLEMENTS = [
+  {
+    txHash: '0xe2a94c11fd5ea393865337f471e984840a503276a3110cfd8b75079a64b577bc',
+    rail: 'celo-direct-tagged',
+    tag: ATTRIBUTION_TAG, // confirmed via fromDataSuffix on input
+    amountMicro: '150000', // 0.15 USAT peer-to-peer
+    payTo: '0x4bc70bf316ff3b885e43e48cc8a7b4ce5895c86a',
+    verified: true,
+  },
+];

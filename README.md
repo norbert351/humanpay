@@ -110,7 +110,7 @@ Every claim in this README is verifiable with `curl` against the live service �
 
 ## Status & honest limits (2026-09-12 — REAL settlement verified)
 
-- **Implemented + tested:** **77 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement**, SelfRegistry gate, rail-readiness.
+- **Implemented + tested:** **78 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`, which now seeds **verified on-chain evidence** that survives redeploys), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement**, SelfRegistry gate, rail-readiness.
 - **✅ REAL VALUE MOVED ON CELO MAINNET** (the thing this hackathon scores):
   | Tx | What | Rail |
   |---|---|---|

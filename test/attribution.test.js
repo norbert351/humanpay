@@ -10,7 +10,7 @@ import { SpendPolicyEngine, newOperatorKey } from '../src/policy.js';
 import { AuditStore } from '../src/receipts.js';
 import { MockSelfGate } from '../src/selfGate.js';
 import { SimulatedSettlement } from '../src/settlement.js';
-import { ATTRIBUTION_TAG } from '../src/constants.js';
+import { ATTRIBUTION_TAG, VERIFIED_TAGGED_SETTLEMENTS } from '../src/constants.js';
 import { TAG, codesIn, taggedCall } from '../src/attribution.js';
 
 async function withServer(fn) {
@@ -48,12 +48,30 @@ test('attribution: /attribution reports tagged vs relayed settlements honestly',
 
     const body = await (await fetch(`${base}/attribution`)).json();
     assert.equal(body.assignedTag, ATTRIBUTION_TAG);
-    assert.equal(body.settlements.length, 2);
-    assert.equal(body.taggedCount, 1, 'only the direct-tagged settlement counts as tagged');
+    // the two live txs PLUS every verified on-chain seed (all tagged by construction)
+    assert.equal(body.settlements.length, 2 + VERIFIED_TAGGED_SETTLEMENTS.length);
+    assert.equal(body.taggedCount, 1 + VERIFIED_TAGGED_SETTLEMENTS.length,
+      'only the direct-tagged live settlement + all verified seed count as tagged');
     const tagged = body.settlements.find((s) => s.txHash === '0x1111');
     const relayed = body.settlements.find((s) => s.txHash === '0x2222');
     assert.equal(tagged.tagged, true);
     assert.equal(relayed.tagged, false, 'a facilitator relay cannot carry a data suffix');
     assert.match(tagged.explorer, /celoscan\.io\/tx\/0x1111/);
+  });
+});
+
+test('attribution: /attribution reports verified on-chain evidence even when the in-memory store is empty (survives redeploys)', async () => {
+  await withServer(async (base, receipts) => {
+    // no live settlements — exactly the post-redeploy state that used to show zero
+    assert.equal(receipts.all().length, 0);
+    const body = await (await fetch(`${base}/attribution`)).json();
+    const verified = body.settlements.filter((s) => s.verified);
+    assert.ok(verified.length >= 1, 'verified seed must not be empty');
+    assert.ok(body.taggedCount >= verified.length, 'verified settlements all count as tagged');
+    const v = VERIFIED_TAGGED_SETTLEMENTS[0];
+    const live = body.settlements.find((s) => s.txHash.toLowerCase() === v.txHash.toLowerCase());
+    assert.equal(live.verified, true);
+    assert.equal(live.tag, ATTRIBUTION_TAG, 'seed settlement carries the assigned tag');
+    assert.match(live.explorer, /celoscan\.io\/tx\/0x/);
   });
 });
