@@ -39,6 +39,19 @@ code,.mono,.hash{font-family:'JetBrains Mono',monospace;font-size:.86em}
 .auth-opt .ico{font-size:1.15rem}
 .auth-note{font-size:.78rem;color:var(--ink-faint);font-family:'JetBrains Mono';margin-top:8px}
 .auth-err{display:none;color:var(--danger);font-family:'JetBrains Mono';font-size:.78rem;background:rgba(255,122,107,.1);border:1px solid rgba(255,122,107,.25);padding:10px 12px;border-radius:9px;margin-bottom:14px}
+.auth-sect{font-family:'JetBrains Mono';font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-faint);margin:18px 0 9px}
+.auth-row{margin-bottom:9px}
+.auth-field{width:100%;padding:13px 14px;border-radius:11px;border:1px solid var(--line2);background:var(--surface2);color:var(--ink);font-size:.92rem;outline:none;transition:border-color .15s}
+.auth-field:focus{border-color:var(--green)}
+.auth-field::placeholder{color:var(--ink-faint)}
+.auth-actions{display:flex;gap:9px;margin-bottom:2px}
+.auth-actions .auth-opt{margin-bottom:0}
+.auth-opt-ghost{background:transparent;color:var(--ink-dim)}
+.auth-opt-ghost:hover{color:var(--green-soft)}
+#oauthButtons{display:grid;gap:9px;margin-bottom:12px}
+.auth-prov{margin:0}
+.auth-prov[data-configured="false"]{opacity:.55;pointer-events:none}
+.auth-prov .badge{font-size:.7rem;color:var(--ink-faint);margin-left:auto}
 .auth-err.show{display:block}
 
 /* header */
@@ -122,12 +135,23 @@ label{font-family:'JetBrains Mono';font-size:.72rem;letter-spacing:.06em;text-tr
 <div class="auth-veil" id="veil">
   <div class="auth-card">
     <div class="logo"><span class="dot"></span>HumanPay</div>
-    <h2>Connect your wallet</h2>
-    <p>Sign in to launch your HumanPay lab. This is self-custody: you keep your keys, you sign every payment, and your agent can never exceed the limits you set.</p>
+    <h2>Sign in to your lab</h2>
+    <p>Prove who you are, then connect or create your wallet. Self-custody end to end — you keep your keys and sign every payment.</p>
     <div class="auth-err" id="authErr"></div>
+
+    <div class="auth-sect">Email</div>
+    <div class="auth-row"><input class="auth-field" id="authEmail" type="email" placeholder="you@example.com" /></div>
+    <div class="auth-row"><input class="auth-field" id="authPass" type="password" placeholder="password (min 8 chars)" /></div>
+    <div class="auth-actions">
+      <button class="auth-opt" id="btnLogin">Log in</button>
+      <button class="auth-opt auth-opt-ghost" id="btnRegister">Create account</button>
+    </div>
+
+    <div class="auth-sect">Or with a wallet / social</div>
     <button class="auth-opt" id="btnMeta"><span class="ico">🦊</span> MetaMask / injected wallet</button>
-    <button class="auth-opt" id="btnReadonly"><span class="ico">👁️</span> Explore read-only (no wallet)</button>
-    <div class="auth-note" id="authNote">Connecting just proves who holds the keys. No keys ever leave your device.</div>
+    <div id="oauthButtons"></div>
+    <button class="auth-opt auth-opt-ghost" id="btnReadonly"><span class="ico">👁️</span> Explore read-only (no wallet)</button>
+    <div class="auth-note" id="authNote">Connecting proves who holds the keys. No keys ever leave your device.</div>
   </div>
 </div>
 
@@ -282,6 +306,55 @@ function finishConnect(addr){
 }
 $('btnMeta').addEventListener('click', connectMeta);
 $('btnReadonly').addEventListener('click', ()=>{ hideVeil(); connected=true; $('btnConnect').textContent='read-only'; loadRails(); });
+
+/* ---- Email / social auth (sessions) ---- */
+function setSession(token){ try{ localStorage.setItem('hp_session', token); }catch(e){} }
+function getSession(){ try{ return localStorage.getItem('hp_session'); }catch(e){ return null; } }
+async function auth(d) {
+  const r = await fetch(location.origin+'/auth/login', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(d) });
+  const data = await r.json();
+  if(!r.ok){ setAuthErr(data.error || 'login failed'); return null; }
+  setSession(data.token);
+  hideVeil();
+  setAuthErr('');
+  return data;
+}
+$('btnLogin').addEventListener('click', async ()=>{
+  const email=$('authEmail').value.trim(), pass=$('authPass').value;
+  if(!email||!pass){ setAuthErr('Email and password required.'); return; }
+  const a = await auth({ email, password: pass });
+  if(a && typeof afterAuth === 'function') afterAuth(a);
+});
+$('btnRegister').addEventListener('click', async ()=>{
+  const email=$('authEmail').value.trim(), pass=$('authPass').value;
+  if(!email||pass.length<8){ setAuthErr('Enter a valid email and a password of 8+ chars.'); return; }
+  const r = await fetch(location.origin+'/auth/register', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, password: pass }) });
+  const data = await r.json();
+  if(!r.ok){ setAuthErr(data.error || 'could not create'); return; }
+  setSession(data.token); hideVeil(); setAuthErr('');
+  if(typeof afterAuth==='function') afterAuth(data);
+});
+async function loadOAuth(){
+  try{
+    const d = await (await fetch(location.origin+'/auth/providers')).json();
+    const el=$('oauthButtons'); if(!el||!d.oauth) return;
+    el.innerHTML = d.oauth.map((p)=>{
+      const names={google:'Google',github:'GitHub'};
+      const cfg=p.configured;
+      const label=cfg ? 'Continue with '+names[p.name] : names[p.name]+' · configure on server';
+      return '<button class="auth-opt auth-prov" data-provider="'+p.name+'" data-configured="'+cfg+'"><span class="ico">'+(p.name==='google'?'G':'🐙')+'</span> '+label+(cfg?'':'<span class="badge">off</span>')+'</button>';
+    }).join('');
+    el.querySelectorAll('.auth-prov').forEach((btn)=>{
+      btn.addEventListener('click', async ()=>{
+        const p=btn.dataset.provider;
+        const cb=location.origin+'/app?oauth='+p;
+        const a=await (await fetch(location.origin+'/auth/oauth/authorize?provider='+p+'&redirect_uri='+encodeURIComponent(cb))).json();
+        if(a.configured) location.href=a.url; else setAuthErr('Social login not configured — use email or wallet.');
+      });
+    });
+  }catch(e){}
+}
+loadOAuth();
 $('btnConnect').addEventListener('click', ()=> connected ? null : showVeil());
 
 /* ---- live data (recorder separate from renderer) ---- */
@@ -441,6 +514,32 @@ setInterval(()=>{ if(connected) loadInsights(); }, 12000);
 loadRails();
 seedPayLink();
 loadInsights();
+
+/* ---- session resume + OAuth callback ---- */
+function afterAuth(acct){
+  // A signed-in human can drop straight to read-only explore; wallet still optional.
+  const who=$('who'); if(who) who.innerHTML = 'Signed in as <b>'+(acct.email||acct.id||'you')+'</b>. Connect a wallet (or use read-only) to move money.';
+  $('btnConnect').textContent='read-only';
+  connected=true; hideVeil(); setAuthErr('');
+  loadRails(); loadInsights();
+}
+// Resume an existing email/social session (skip the veil if a token is stored).
+(async function resume(){
+  const tok=getSession();
+  if(tok){
+    try{
+      const r=await fetch(location.origin+'/auth/me',{headers:{Authorization:'Bearer '+tok}});
+      if(r.ok){ const me=await r.json(); afterAuth(me); return; }
+    }catch(e){}
+  }
+  // OAuth callback: we may have been redirected back with ?oauth=...
+  const params=new URLSearchParams(location.search);
+  if(params.get('oauth')){
+    // (Full code exchange happens in a server-side flow; the veil stays for now.)
+  }
+  // Gate the product: show the sign-in veil on load (read-only is an explicit choice).
+  if(!connected) setTimeout(()=>{ if(!connected) showVeil(); }, 350);
+})();
 </script>
 </body>
 </html>

@@ -15,6 +15,7 @@ import { TeleMessageHandler } from './telegram.js';
 import { P2PTeleMessageHandler } from './p2p.js';
 import { UserRegistry } from './users.js';
 import { HumanPayBook } from './book.js';
+import { PersistentBook } from './bookStore.js';
 import { USAT_ADDRESS } from './constants.js';
 
 /** Resolve the settlement rail: real x402 facilitator when creds are present, else sim. */
@@ -57,7 +58,11 @@ export function buildRuntime() {
     engine, selfGate, settlement, receipts, operatorSign, operatorAddress: opAcc.address,
   });
   const registry = new UserRegistry();
-  const book = new HumanPayBook();
+  // Business objects (bills/subs/escrow/invoices/webhooks/keys) persist to the
+  // same SQLite volume as receipts when AUDIT_DB_PATH is set — else in-memory.
+  const book = process.env.AUDIT_DB_PATH
+    ? new PersistentBook({ path: process.env.AUDIT_DB_PATH, secret: process.env.AUDIT_SECRET })
+    : new HumanPayBook();
   const p2p = new P2PTeleMessageHandler({ registry, selfGate, settlement, receipts });
   // Dispatcher: P2P commands (register/key/limit/tip/…) route to the peer handler;
   // anything else (legacy agent /pay) falls through to the single-operator handler.

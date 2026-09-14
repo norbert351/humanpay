@@ -13,9 +13,12 @@ import { RateLimiter } from './ratelimit.js';
 import { payUrl, payPayload, qrPng } from './paylinks.js';
 import { quote as fxQuote, swapIntent, CORRIDORS } from './fx.js';
 import { independenceFor, independenceSummary } from './independence.js';
+import { AuthService, OAUTH_PROVIDERS } from './authn.js';
+import { TelegramNotifier } from './notify.js';
 
-export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settlement = new SimulatedSettlement(), receipts = new AuditStore(), registry = null, book = new HumanPayBook(), limiter = new RateLimiter(), fetchImpl = globalThis.fetch }) {
+export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settlement = new SimulatedSettlement(), receipts = new AuditStore(), registry = null, book = new HumanPayBook(), limiter = new RateLimiter(), fetchImpl = globalThis.fetch, auth = new AuthService({ fetchImpl }), notifier = null }) {
   engine = engine || new SpendPolicyEngine({ operatorAddress: '*' });
+  notifier = notifier || new TelegramNotifier({ registry, fetchImpl });
   const json = (res, { code, body }) => {
     if (res.writableEnded) return;
     res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
@@ -82,9 +85,13 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
         }
         const request = { amountMicro, payTo: target.wallet, to: target.wallet, from: from || null, opts };
         const receipt = receipts.append({ decision: 'allow', reason: null, request, settlement: settled });
-        // Fire webhooks (non-blocking guarantee: emit failure never fails the settle).
-        try { await book.emit('payment.settled', { receiptId: receipt.id, from: from || null, payTo: target.wallet, amountMicro, tagged: settled.source === 'celo-direct-tagged', rail: settled.source, txHash: settled.txHash }, { fetchImpl }); } catch { /* best-effort */ }
-        return { receiptId: receipt.id, tagged: settled.source === 'celo-direct-tagged', settlement: settled, txHash: settled.txHash, rail: settled.source };
+              // Fire webhooks (non-blocking guarantee: emit failure never fails the settle).
+              try { await book.emit('payment.settled', { receiptId: receipt.id, from: from || null, payTo: target.wallet, amountMicro, tagged: settled.source === 'celo-direct-tagged', rail: settled.source, txHash: settled.txHash }, { fetchImpl }); } catch { /* best-effort */ }
+              // Push Telegram receipts to BOTH parties (best-effort; never blocks a settled payment).
+              try {
+                await notifier.notifyPayment({ amountMicro, from: from || null, to: target.wallet, tagged: settled.source === 'celo-direct-tagged', rail: settled.source, txHash: settled.txHash, title: opts.title });
+              } catch { /* best-effort */ }
+              return { receiptId: receipt.id, tagged: settled.source === 'celo-direct-tagged', settlement: settled, txHash: settled.txHash, rail: settled.source };
       } catch (e) {
         return { error: (e.shortMessage || e.message), code: (e.statusCode || ((e.shortMessage || e.message || '').includes('PAYMENT-SIGNATURE') ? 400 : 502)) };
       }
@@ -360,6 +367,40 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
       } else if (req.method === 'POST' && u.pathname === '/block') {
         const b = await readBody();
         result = { code: 200, body: { receipt: receipts.append({ decision: 'block', reason: b.reason, request: b, settlement: null }) } };
+      }
+      // ================= AUTH ROUTES =================
+      else if (req.method === 'POST' && u.pathname === '/auth/register') {
+        const b = await readBody();
+        try { const acct = auth.registerEmail({ email: b.email, password: b.password }); result = { code: 201, body: { id: acct.id, email: acct.email, token: auth.issueSession(acct) } }; }
+        catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'POST' && u.pathname === '/auth/login') {
+        const b = await readBody();
+        const acct = auth.loginEmail({ email: b.email, password: b.password });
+        result = acct ? { code: 200, body: { id: acct.id, email: acct.email, token: auth.issueSession(acct) } } : { code: 401, body: { error: 'invalid credentials' } };
+      } else if (req.method === 'POST' && u.pathname === '/auth/logout') {
+        result = { code: 200, body: { ok: true, note: 'sessions are stateless; discard the client token' } };
+      } else if (req.method === 'GET' && u.pathname === '/auth/me') {
+        const acct = auth.authenticate(req.headers['authorization'] || '');
+        result = acct ? { code: 200, body: { id: acct.id, email: acct.email } } : { code: 401, body: { error: 'UNAUTHORIZED' } };
+      } else if (req.method === 'GET' && u.pathname === '/auth/providers') {
+        // Report which social providers are configured (honest — like /rails).
+        const names = Object.keys(OAUTH_PROVIDERS);
+        result = { code: 200, body: { emailPassword: true, oauth: names.map((n) => ({ name: n, configured: !!auth.providerConfig(n).configured })) } };
+      } else if (req.method === 'GET' && u.pathname === '/auth/oauth/authorize') {
+        const q = u.searchParams;
+        try {
+          const cfg = auth.oauthAuthorizeUrl({ provider: q.get('provider'), redirectUri: q.get('redirect_uri') });
+          result = cfg.configured ? { code: 200, body: cfg } : { code: 200, body: cfg };
+        } catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'POST' && u.pathname === '/auth/oauth/callback') {
+        const b = await readBody();
+        try {
+          const acct = await auth.oauthExchange({ provider: b.provider, code: b.code, redirectUri: b.redirect_uri, state: b.state });
+          result = { code: 200, body: { ...acct, token: auth.issueSession({ id: acct.id, email: acct.email }) } };
+        } catch (e) { result = { code: 502, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/notifications') {
+        // Inspect the push-receipt audit trail (who was told about which settlement).
+        result = { code: 200, body: { enabled: notifier.enabled, sent: notifier.sent.slice(-50), count: notifier.sent.length } };
       }
       // ================= NEW FEATURE ROUTES =================
       else if (req.method === 'GET' && u.pathname.startsWith('/pay/')) {
