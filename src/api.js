@@ -16,6 +16,8 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
     res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify(body, (k, v) => (typeof v === 'bigint' ? v.toString() : v)));
   };
+  // Badge a JSON status payload with the same tag/chain the landing shows.
+  const STATUS_JSON = () => ({ ok: true, tag: ATTRIBUTION_TAG, chainId: CHAIN_ID });
 
   return createServer(async (req, res) => {
     const u = new URL(req.url, 'http://localhost');
@@ -38,16 +40,26 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
         // check never misrepresents which wallet the process actually runs as.
         result = { code: 200, body: { ok: true, tag: ATTRIBUTION_TAG, chainId: CHAIN_ID, agentWallet: engine.operatorAddress && engine.operatorAddress !== '*' ? engine.operatorAddress : AGENT_WALLET, peers: registry ? registry.count() : 0, telegram: !!process.env.TELEGRAM_BOT_TOKEN, settlement: settlement?.constructor?.name || null, self: selfGate?.constructor?.name || null } };
       } else if (req.method === 'GET' && u.pathname === '/') {
-        // Minimal honest landing surface — judges land on a live status page, not a 404.
-        result = { code: 200, body: {
-          name: 'HumanPay',
-          tagline: 'Bounded auto-pay agent — agents move real money, only inside human-set limits, only after proof-of-human, with every decision on a tamper-evident receipt.',
-          chainId: CHAIN_ID,
-          attributionTag: ATTRIBUTION_TAG,
-          endpoints: ['/health', '/rails', '/users', '/receipts', '/attribution', '/proof', 'POST /limits', 'POST /pay', 'POST /tip/offline-auth'],
-          telegram: '@tokenscanner2_bot',
-          note: 'Settlement rail and Self gate are reported honestly at /rails — SIM/MOCK labels mean that rail is not live.',
-        } };
+        // Serve the HumanPay landing UI. Falls back to the minimal JSON status
+        // payload only if the static file is absent (e.g. a bare source checkout).
+        const { readFileSync } = await import('node:fs');
+        const path = new URL('../public/humanpay.html', import.meta.url);
+        let html;
+        try { html = readFileSync(path, 'utf8'); } catch { html = null; }
+        if (html) {
+          if (res.writableEnded) return;
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Access-Control-Allow-Origin': '*' });
+          res.end(html);
+        } else {
+          result = { code: 200, body: {
+            name: 'HumanPay',
+            tagline: 'Bounded auto-pay agent — agents move real money, only inside human-set limits, only after proof-of-human, with every decision on a tamper-evident receipt.',
+            ...STATUS_JSON(),
+            endpoints: ['/health', '/rails', '/users', '/receipts', '/attribution', '/proof', 'POST /limits', 'POST /pay', 'POST /tip/offline-auth'],
+            telegram: '@tokenscanner2_bot',
+            note: 'Settlement rail and Self gate are reported honestly at /rails — SIM/MOCK labels mean that rail is not live.',
+          } };
+        }
       } else if (req.method === 'GET' && u.pathname === '/rails') {
         // Honest live rail-readiness (funding, settlement, self) — no invented readiness.
         const st = await railStatus({ operatorAddress: engine.operatorAddress, settlement, selfGate });

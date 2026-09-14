@@ -15,6 +15,9 @@
   },
   "dependencies": {
     "@celo/attribution-tags": "^0.3.0",
+    "@selfxyz/agent-sdk": "^0.2.1",
+    "@selfxyz/qrcode": "^1.0.25",
+    "ethers": "^6.17.0",
     "viem": "^2.56.3"
   }
 }

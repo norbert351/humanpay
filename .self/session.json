@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "operation": "register",
+  "sessionId": "c233db4a9f2c809bc9d6d52de6a9285e",
+  "createdAt": "2026-09-14T02:32:50.077Z",
+  "expiresAt": "2026-09-14T03:02:50.077Z",
+  "mode": "self-custody",
+  "disclosures": {
+    "minimumAge": 0,
+    "ofac": false,
+    "nationality": false,
+    "name": false,
+    "date_of_birth": false,
+    "gender": false,
+    "issuing_state": false
+  },
+  "network": {
+    "chainId": 42220,
+    "registryAddress": "0xaC3DF9ABf80d0F5c020C06B04Cced27763355944",
+    "rpcUrl": "https://forno.celo.org",
+    "endpointType": "celo",
+    "appUrl": "https://self-agent-id.vercel.app",
+    "appName": "Self Agent ID",
+    "scope": "self-agent-id"
+  },
+  "registration": {
+    "humanIdentifier": "0x10b4064504D3d0D400A607164190B04dE679A4A6",
+    "agentAddress": "0x10b4064504D3d0D400A607164190B04dE679A4A6",
+    "userDefinedData": "R0"
+  },
+  "callback": {
+    "listenHost": "127.0.0.1",
+    "listenPort": 37490,
+    "path": "/callback",
+    "stateToken": "5d5335bc130b8bc898a34b2714095c2556964b2d729cd5b9",
+    "used": false
+  },
+  "state": {
+    "stage": "initialized",
+    "updatedAt": "2026-09-14T02:32:50.077Z"
+  }
+}
