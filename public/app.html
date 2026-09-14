@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HumanPay — app</title>
+<meta name="description" content="HumanPay product: connect your Celo wallet, set your spend limits, and send bounded, tagged, peer-to-peer USAT — fully self-custody." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+:root{--bg:#0C0F0E;--bg2:#0F1412;--surface:#151B18;--surface2:#1A211D;--line:rgba(62,207,142,.14);--line2:rgba(255,255,255,.08);--green:#3ECF8E;--green-soft:#7FE3B8;--gold:#E9C46A;--ink:#EAF3EE;--ink-dim:#9DB3A6;--ink-faint:#6C8074;--danger:#FF7A6B}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:'Instrument Sans',system-ui,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased;min-height:100vh}
+body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;background:radial-gradient(700px 420px at 12% -6%, rgba(62,207,142,.09), transparent 60%),radial-gradient(800px 500px at 90% 0%, rgba(233,196,106,.06), transparent 60%)}
+.wrap{max-width:1060px;margin:0 auto;padding:0 22px}
+a{color:var(--green);text-decoration:none}
+h1,h2,h3{font-family:'Space Grotesk',sans-serif;line-height:1.1;letter-spacing:-.01em}
+code,.mono,.hash{font-family:'JetBrains Mono',monospace;font-size:.86em}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:600;font-size:.92rem;padding:11px 20px;border-radius:11px;transition:transform .15s,box-shadow .2s;cursor:pointer;border:none;white-space:nowrap}
+.btn:hover{transform:translateY(-1px)}
+.btn-primary{background:var(--green);color:#06231a}
+.btn-primary:hover{box-shadow:0 8px 26px rgba(62,207,142,.32)}
+.btn-ghost{background:transparent;color:var(--ink);border:1px solid var(--line2)}
+.btn-ghost:hover{border-color:var(--green);color:var(--green-soft)}
+.btn[disabled]{opacity:.5;cursor:not-allowed;transform:none;box-shadow:none}
+
+/* iframe-less auth overlay */
+.auth-veil{position:fixed;inset:0;z-index:60;background:rgba(8,10,9,.72);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:20px}
+.auth-veil.show{display:flex}
+.auth-card{background:linear-gradient(180deg,#151B18,#101512);border:1px solid var(--line);border-radius:20px;padding:34px;max-width:410px;width:100%;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+.auth-card .logo{display:flex;align-items:center;gap:10px;font-family:'Space Grotesk';font-weight:700;font-size:1.1rem;margin-bottom:6px}
+.auth-card .logo .dot{width:20px;height:20px;border-radius:6px;background:linear-gradient(135deg,var(--green),var(--gold))}
+.auth-card h2{font-size:1.35rem;margin:14px 0 6px}
+.auth-card p{color:var(--ink-dim);font-size:.9rem;margin-bottom:22px}
+.auth-opt{display:flex;align-items:center;gap:12px;width:100%;padding:14px 16px;border-radius:12px;border:1px solid var(--line2);background:var(--surface2);color:var(--ink);font-weight:500;font-size:.92rem;cursor:pointer;margin-bottom:10px;transition:border-color .15s,background .15s}
+.auth-opt:hover{border-color:var(--green);background:rgba(62,207,142,.08)}
+.auth-opt .ico{font-size:1.15rem}
+.auth-note{font-size:.78rem;color:var(--ink-faint);font-family:'JetBrains Mono';margin-top:8px}
+.auth-err{display:none;color:var(--danger);font-family:'JetBrains Mono';font-size:.78rem;background:rgba(255,122,107,.1);border:1px solid rgba(255,122,107,.25);padding:10px 12px;border-radius:9px;margin-bottom:14px}
+.auth-err.show{display:block}
+
+/* header */
+.topbar{position:sticky;top:0;z-index:50;backdrop-filter:blur(14px);background:rgba(12,15,14,.78);border-bottom:1px solid var(--line2)}
+.topbar-in{display:flex;align-items:center;justify-content:space-between;height:62px;gap:12px}
+.brand{display:flex;align-items:center;gap:10px;font-family:'Space Grotesk';font-weight:700}
+.brand .dot{width:20px;height:20px;border-radius:6px;background:linear-gradient(135deg,var(--green),var(--gold))}
+.topbar-right{display:flex;align-items:center;gap:12px}
+.home-link{color:var(--ink-dim);font-size:.86rem}
+.home-link:hover{color:var(--ink)}
+.wallet-chip{display:inline-flex;align-items:center;gap:9px;font-family:'JetBrains Mono';font-size:.78rem;color:var(--green-soft);border:1px solid var(--line);background:rgba(62,207,142,.07);padding:7px 12px;border-radius:999px}
+.wallet-chip .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(62,207,142,.6);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(62,207,142,.5)}70%{box-shadow:0 0 0 8px rgba(62,207,142,0)}100%{box-shadow:0 0 0 0 rgba(62,207,142,0)}}
+
+.layout{padding:28px 0 60px}
+.grid{display:grid;grid-template-columns:2fr 1fr;gap:20px;margin-top:22px}
+h2.page-title{font-size:1.7rem}
+.sub{color:var(--ink-dim);margin-top:6px;font-size:.95rem;max-width:620px}
+
+.card{background:var(--surface);border:1px solid var(--line2);border-radius:18px;padding:22px;margin-bottom:20px}
+.card-h{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:8px}
+.card-h .t{font-family:'Space Grotesk';font-weight:600;font-size:1.05rem;display:flex;align-items:center;gap:9px}
+.live-dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 0 0 rgba(62,207,142,.6);animation:pulse 2s infinite}
+.card-h .hint{font-family:'JetBrains Mono';font-size:.72rem;color:var(--ink-faint)}
+
+.stat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:16px}
+.stat{background:var(--surface2);border:1px solid var(--line2);border-radius:12px;padding:16px}
+.stat .lab{font-family:'JetBrains Mono';font-size:.66rem;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-faint)}
+.stat .val{font-family:'Space Grotesk';font-size:1.7rem;font-weight:700;margin-top:6px}
+.stat .val small{font-family:'JetBrains Mono';font-size:.78rem;color:var(--ink-faint);font-weight:400}
+.bar{display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--line2);font-family:'JetBrains Mono';font-size:.8rem;color:var(--ink-dim)}
+.bar:last-child{border-bottom:none}
+.status{font-family:'JetBrains Mono';font-size:.7rem;padding:2px 9px;border-radius:6px;white-space:nowrap}
+.status.live{color:#06231a;background:var(--green)}
+.status.sim{color:var(--gold);background:rgba(233,196,106,.14);border:1px solid rgba(233,196,106,.3)}
+.status.mock{color:var(--danger);background:rgba(255,122,107,.12);border:1px solid rgba(255,122,107,.3)}
+
+label{font-family:'JetBrains Mono';font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-faint);display:block;margin:14px 0 6px}
+.field{width:100%;background:var(--bg2);border:1px solid var(--line2);border-radius:10px;color:var(--ink);font-family:'JetBrains Mono';font-size:.9rem;padding:11px 13px;outline:none}
+.field:focus{border-color:var(--green)}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.act{display:flex;gap:10px;margin-top:18px;flex-wrap:wrap}
+.callout{font-family:'JetBrains Mono';font-size:.74rem;line-height:1.5;padding:11px 13px;border-radius:9px;margin-top:12px;display:none;white-space:pre-wrap}
+.callout.show{display:block}
+.callout.ok{color:var(--green-soft);background:rgba(62,207,142,.08);border:1px solid var(--line)}
+.callout.err{color:var(--danger);background:rgba(255,122,107,.08);border:1px solid rgba(255,122,107,.28)}
+.callout.warn{color:var(--gold);background:rgba(233,196,106,.08);border:1px solid rgba(233,196,106,.3)}
+
+.receipts{font-family:'JetBrains Mono';font-size:.78rem;color:var(--ink-dim)}
+.receipts .row{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--line2);flex-wrap:wrap}
+.receipts .row:last-child{border-bottom:none}
+.pill{font-size:.66rem;padding:2px 8px;border-radius:6px}
+.pill.allow{color:var(--green);background:rgba(62,207,142,.12)}
+.pill.block{color:var(--danger);background:rgba(255,122,107,.12)}
+
+@media (max-width:860px){.grid{grid-template-columns:1fr}.stat-row{grid-template-columns:1fr 1fr}}
+@media (max-width:560px){.stat-row{grid-template-columns:1fr}.field-row{grid-template-columns:1fr}.topbar-right .home-link{display:none}.wrap{padding:0 16px}}
+</style>
+</head>
+<body>
+
+<div class="auth-veil" id="veil">
+  <div class="auth-card">
+    <div class="logo"><span class="dot"></span>HumanPay</div>
+    <h2>Connect your wallet</h2>
+    <p>Sign in to launch your HumanPay lab. This is self-custody: you keep your keys, you sign every payment, and your agent can never exceed the limits you set.</p>
+    <div class="auth-err" id="authErr"></div>
+    <button class="auth-opt" id="btnMeta"><span class="ico">🦊</span> MetaMask / injected wallet</button>
+    <button class="auth-opt" id="btnReadonly"><span class="ico">👁️</span> Explore read-only (no wallet)</button>
+    <div class="auth-note" id="authNote">Connecting just proves who holds the keys. No keys ever leave your device.</div>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="wrap topbar-in">
+    <div class="brand"><span class="dot"></span>HumanPay <span class="mono" style="color:var(--ink-faint);font-size:.72rem;font-weight:400">/app</span></div>
+    <div class="topbar-right">
+      <a class="home-link" href="/">← Home</a>
+      <a class="btn btn-primary" id="btnConnect" style="padding:9px 16px;font-size:.85rem" href="javascript:void(0)">Connect wallet</a>
+    </div>
+  </div>
+</header>
+
+<main class="layout">
+  <div class="wrap">
+    <h2 class="page-title">Your HumanPay lab</h2>
+    <p class="sub" id="who">Connect your wallet to set your spend limits and send peer-to-peer USAT. Every action is signed by you and recorded on a tamper-evident receipt.</p>
+
+    <div class="grid">
+      <div>
+        <div class="card">
+          <div class="card-h"><span class="t"><span class="live-dot"></span> Rail status</span><span class="hint">Celo mainnet · 42220</span></div>
+          <div class="stat-row">
+            <div class="stat"><div class="lab">Executor USAT</div><div class="val"><span id="usat">—</span> <small>USAT</small></div></div>
+            <div class="stat"><div class="lab">Executor CELO</div><div class="val"><span id="celo">—</span> <small>CELO</small></div></div>
+            <div class="stat"><div class="lab">Tagged txs</div><div class="val"><span id="tagged">—</span></div></div>
+          </div>
+          <div style="margin-top:16px">
+            <div class="bar"><span class="status" id="st-settle">…</span><span>Settlement rail</span><span class="mono" id="settleD">…</span></div>
+            <div class="bar"><span class="status" id="st-self">…</span><span>Proof-of-human (Self)</span><span class="mono" id="selfD">…</span></div>
+            <div class="bar"><span class="status" id="st-attr">…</span><span>ERC-8021 attribution</span><span class="mono" id="attrD">…</span></div>
+          </div>
+          <div class="mono" style="margin-top:12px;font-size:.74rem;color:var(--ink-faint)">executor <span class="hash" id="exec">…</span> · <span id="fresh">…</span></div>
+        </div>
+
+        <div class="card" id="payCard">
+          <div class="card-h"><span class="t">Send a tip</span><span class="hint">self-custody · EIP-3009</span></div>
+          <label>Recipient wallet (0x…) or peer @handle</label>
+          <input class="field" id="payTo" placeholder="0x… or @peer" />
+          <div class="field-row">
+            <div><label>Amount (USAT)</label><input class="field" id="amount" placeholder="0.00" type="number" min="0" step="0.000001" /></div>
+            <div><label>Note (optional)</label><input class="field" id="note" placeholder="for the coffee" /></div>
+          </div>
+          <div class="act">
+            <button class="btn btn-primary" id="btnTip">Sign & send</button>
+            <button class="btn btn-ghost" id="btnDraw" style="color:#cfcfcf">Drain-test (block)</button>
+          </div>
+          <div class="callout" id="tipOut"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="card-h"><span class="t">Your limits</span><span class="hint">set once</span></div>
+          <label>Per-tx max (USAT)</label><input class="field" id="limPer" placeholder="5" />
+          <label>Daily cap (USAT)</label><input class="field" id="limDay" placeholder="50" />
+          <label>Lifetime cap (USAT)</label><input class="field" id="limTotal" placeholder="100" />
+          <div class="act"><button class="btn btn-ghost" id="btnLimits" style="color:#cfcfcf">Set limits</button></div>
+          <div class="callout" id="limOut"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t">Receipts</span><span class="hint">tamper-evident chain</span></div>
+          <div class="receipts" id="receipts"><div class="mono" style="color:var(--ink-faint)">connect to load</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+let connected = false, address = null, rail = null, attr = null;
+
+/* ---- wallet connect (EIP-1193, no framework) ---- */
+function showVeil(){ $('veil').classList.add('show'); }
+function hideVeil(){ $('veil').classList.remove('show'); }
+function setAuthErr(m){ const el=$('authErr'); el.textContent=m; el.classList.toggle('show', !!m); }
+
+function connectMeta(){
+  const eth = window.ethereum;
+  if (!eth){ setAuthErr('No injected wallet found. Install MetaMask or a wallet with EIP-1193, or use read-only.'); return; }
+  eth.request({ method:'eth_requestAccounts' })
+    .then((accs)=>{ const addr = accs && accs[0]; if(!addr) throw new Error('no account'); finishConnect(addr); })
+    .catch((e)=> setAuthErr('Connect cancelled: ' + ((e&&e.message)||e)));
+}
+function finishConnect(addr){
+  address = addr.toLowerCase(); connected = true;
+  const short = addr.slice(0,6) + '…' + addr.slice(-4);
+  $('who').innerHTML = 'Signed in as <span class="wallet-chip" style="padding:2px 9px;font-size:.76rem">' + short + '</span>. Your lab is live — set limits, send tips.';
+  $('btnConnect').textContent = short; $('btnConnect').style.padding='9px 15px';
+  $('btnTip').disabled = false; hideVeil(); setAuthErr('');
+  loadRails(); loadReceipts();
+}
+$('btnMeta').addEventListener('click', connectMeta);
+$('btnReadonly').addEventListener('click', ()=>{ hideVeil(); connected=true; $('btnConnect').textContent='read-only'; loadRails(); });
+$('btnConnect').addEventListener('click', ()=> connected ? null : showVeil());
+
+/* ---- live data (recorder separate from renderer) ---- */
+function status(el, cls, label){ const n=$(el); if(n){ n.textContent=label; n.className='status '+cls; } }
+async function loadRails(){
+  const base = location.origin;
+  let a=null;
+  try { attr = await (await fetch(base+'/attribution')).json(); } catch(e){}
+  try { rail = await (await fetch(base+'/rails')).json(); } catch(e){}
+  renderRails();
+}
+function renderRails(){
+  if(!rail || !attr) return;
+  const f = rail.rails?.funding || {};
+  $('usat').textContent = (typeof f.usat==='number')?f.usat.toFixed(3):'0';
+  $('celo').textContent = (typeof f.celo==='number')?f.celo.toFixed(3):'0';
+  $('tagged').textContent = attr.taggedCount ?? 0;
+  $('exec').textContent = (rail.spender||'0x').slice(0,8)+'…';
+  const st = rail.rails?.settlement||{};
+  status('st-settle', st.live?'live':'sim', st.live?'LIVE':'SIM');
+  $('settleD').textContent = (st.class||'?')+(st.live?' · LIVE':' · SIM');
+  const sf = rail.rails?.self||{};
+  status('st-self', sf.live?'live':'mock', sf.live?'LIVE':'MOCK');
+  $('selfD').textContent = (sf.class||'?')+(sf.live?' · LIVE':' · MOCK');
+  status('st-attr', (attr.taggedCount||0)>0?'live':'sim', (attr.taggedCount||0)>0?'LIVE':'SIM');
+  $('attrD').textContent = attr.taggedCount+' tagged'+(attr.taggedCount===1?'':'s');
+  $('fresh').textContent = 'updated '+new Date().toLocaleTimeString();
+}
+async function loadReceipts(){
+  try {
+    const r = await (await fetch(location.origin+'/receipts')).json();
+    const wrap = $('receipts');
+    if(!Array.isArray(r) || r.length===0){ wrap.innerHTML='<div class="mono" style="color:var(--ink-faint)">no decisions yet — send a tip or run a drain-test</div>'; return; }
+    wrap.innerHTML = r.slice().reverse().slice(0,12).map((x)=>{
+      const allow = x.decision==='allow';
+      const amt = x.request?.amountMicro ? (Number(x.request.amountMicro)/1e6).toFixed(3) : '?';
+      const to = (x.request?.payTo||'?').slice(0,8);
+      const label = allow ? 'ALLOW' : 'BLOCK';
+      return '<div class="row"><span><span class="pill '+x.decision+'">'+label+'</span> '+amt+' USAT · '+to+'…</span><span>'+ (x.settlement?.source||'receipt') +'</span></div>';
+    }).join('');
+  } catch(e){}
+}
+setInterval(()=>{ if(connected) loadRails(); }, 9000);
+loadRails();
+
+/* ---- actions ---- */
+function out(id, cls, txt){ const el=$(id); el.textContent=txt; el.className='callout '+cls+' show'; }
+function val(id){ return $(id).value.trim(); }
+
+$('btnTip').addEventListener('click', async ()=>{
+  const to = val('payTo'), note = val('note');
+  const amt = parseFloat(val('amount'));
+  if(!connected){ out('tipOut','warn','Connect a wallet first.'); return; }
+  if(!to){ out('tipOut','err','Recipient required.'); return; }
+  if(!amt || amt<=0){ out('tipOut','err','Amount must be > 0.'); return; }
+  out('tipOut','warn','Signing request… (self-custody: you approve the exact EIP-3009 in your wallet)');
+  try {
+    const amountMicro = String(Math.round(amt*1e6));
+    // request the offline-auth typed-data; in DEV/sim the rail settles directly
+    const res = await fetch(location.origin+'/tip/offline-auth', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ amountMicro, payTo: to, note }) });
+    const data = await res.json();
+    if(res.ok && data.typedData && window.ethereum){
+      // real self-custody signature
+      const sig = await window.ethereum.request({ method:'eth_signTypedData_v4', params:[address, JSON.stringify(data.typedData)] });
+      const settle = await fetch(location.origin+'/tip/sign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ amountMicro, payTo: to, signature: sig }) }).then(r=>r.json());
+      out('tipOut','ok','Sent · '+JSON.stringify({rail: settle.rail||'?', tagged: !!settle.tagged}) + (settle.receiptId?(' · receipt '+settle.receiptId):''));
+    } else if(data.error){
+      out('tipOut','err', (data.reason||data.error));
+    } else {
+      out('tipOut','ok','Signed+submitted (dev/sim rail). Refresh rails.');
+    }
+    loadReceipts();
+  } catch(e){ out('tipOut','err','Error: '+((e&&e.message)||e)); }
+});
+
+$('btnDraw').addEventListener('click', async ()=>{
+  if(!connected){ out('tipOut','warn','Connect a wallet first.'); return; }
+  // over-cap drain attempt → must be BLOCKED by the policy kernel
+  const res = await fetch(location.origin+'/block', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reason:'drain-test', amountMicro:'99999999999', payTo:'0x000000000000000000000000000000000000dead' }) });
+  const data = await res.json();
+  out('tipOut', 'warn', 'Drain-test result: policy gate recorded a BLOCK · receipt '+(data.receipt?.id||'?'));
+  loadReceipts();
+});
+
+$('btnLimits').addEventListener('click', async ()=>{
+  const per=parseFloat(val('limPer')), day=parseFloat(val('limDay')), tot=parseFloat(val('limTotal'));
+  if(isNaN(per)||isNaN(day)||isNaN(tot)){ out('limOut','err','Fill all three caps (numbers).'); return; }
+  const res = await fetch(location.origin+'/limits', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ perTxMicro:String(Math.round(per*1e6)), dayMicro:String(Math.round(day*1e6)), totalMicro:String(Math.round(tot*1e6)), payTo: address }) });
+  const data = await res.json();
+  out('limOut', res.ok?'ok':'err', res.ok ? ('Limits set on your lab: '+per+' / '+day+' / '+tot+' USAT') : (data.error||'could not set'));
+});
+loadRails();
+</script>
+</body>
+</html>

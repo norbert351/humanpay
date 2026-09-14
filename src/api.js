@@ -39,11 +39,14 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
         // Report the LIVE operator address (not a stale constant) so the health
         // check never misrepresents which wallet the process actually runs as.
         result = { code: 200, body: { ok: true, tag: ATTRIBUTION_TAG, chainId: CHAIN_ID, agentWallet: engine.operatorAddress && engine.operatorAddress !== '*' ? engine.operatorAddress : AGENT_WALLET, peers: registry ? registry.count() : 0, telegram: !!process.env.TELEGRAM_BOT_TOKEN, settlement: settlement?.constructor?.name || null, self: selfGate?.constructor?.name || null } };
-      } else if (req.method === 'GET' && u.pathname === '/') {
-        // Serve the HumanPay landing UI. Falls back to the minimal JSON status
-        // payload only if the static file is absent (e.g. a bare source checkout).
+      } else if (req.method === 'GET' && (u.pathname === '/' || u.pathname === '/app')) {
+        // Landing (/product split: '/ → marketing landing, '/app' → the product
+        // page with wallet auth. Falls back to a minimal JSON status payload if
+        // the static file is absent (e.g. a bare source checkout). All API routes
+        // below are untouched — the product page fetches them over HTTP.
         const { readFileSync } = await import('node:fs');
-        const path = new URL('../public/humanpay.html', import.meta.url);
+        const file = u.pathname === '/app' ? '../public/app.html' : '../public/landing.html';
+        const path = new URL(file, import.meta.url);
         let html;
         try { html = readFileSync(path, 'utf8'); } catch { html = null; }
         if (html) {
