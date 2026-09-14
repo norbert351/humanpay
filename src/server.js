@@ -18,6 +18,7 @@ const server = createHumanPayApp({
   settlement: rt.settlement,
   receipts: rt.receipts,
   registry: rt.registry,
+  book: rt.book,
 });
 
 server.listen(PORT, () => {

@@ -192,6 +192,59 @@ label{font-family:'JetBrains Mono';font-size:.72rem;letter-spacing:.06em;text-tr
         <div class="card">
           <div class="card-h"><span class="t">Receipts</span><span class="hint">tamper-evident chain</span></div>
           <div class="receipts" id="receipts"><div class="mono" style="color:var(--ink-faint)">connect to load</div></div>
+          <div class="act" style="margin-top:12px"><a class="btn btn-ghost" href="/receipts.csv" style="color:#cfcfcf;text-decoration:none">Export CSV</a></div>
+        </div>
+      </div>
+    </div>
+
+    <h2 class="page-title" style="margin-top:38px;font-size:1.25rem">Tools</h2>
+    <p class="sub">One narrow job at a time — split a bill, share a pay link, quote a corridor, or watch your spend. Every one routes through the same bounded spine.</p>
+    <div class="grid" style="margin-top:18px">
+      <div>
+        <div class="card">
+          <div class="card-h"><span class="t">Your pay link</span><span class="hint">share / scan</span></div>
+          <p class="sub" style="margin:0 0 10px">Your own channel: anyone can open or scan this to pay you.</p>
+          <div class="addr" style="font-family:'JetBrains Mono';font-size:.74rem;word-break:break-all;background:rgba(255,255,255,.03);border:1px solid var(--line2);border-radius:10px;padding:10px 12px" id="payLink">connect to load</div>
+          <div class="act" style="margin-top:10px"><button class="btn btn-ghost" id="btnCopyLink" style="color:#cfcfcf">Copy link</button><a class="btn btn-ghost" id="btnQR" href="#" target="_blank" style="color:#cfcfcf;text-decoration:none">View QR</a></div>
+          <div class="callout" id="linkOut"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t">Split a bill</span><span class="hint">the one job</span></div>
+          <label>Title</label><input class="field" id="billTitle" placeholder="Dinner with friends" />
+          <div class="field-row">
+            <div><label>Total (USAT)</label><input class="field" id="billTotal" placeholder="30" /></div>
+            <div><label>Split between</label><input class="field" id="billParts" placeholder="3" type="number" min="2" max="20" /></div>
+          </div>
+          <label>Recipients (@handle, comma-separated)</label><input class="field" id="billRecipients" placeholder="@alice, @bob" />
+          <div class="act"><button class="btn btn-primary" id="btnBill">Create bill</button></div>
+          <div class="callout" id="billOut"></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="card">
+          <div class="card-h"><span class="t">FX corridor</span><span class="hint">USAT ↔ local</span></div>
+          <div class="field-row">
+            <div><label>Corridor</label>
+              <select class="field" id="fxCorridor"><option value="NGN">NGN · cNGN</option><option value="BRL">BRL · wBRL</option><option value="ARS">ARS · wARS</option></select>
+            </div>
+            <div><label>USAT</label><input class="field" id="fxUsat" placeholder="10" /></div>
+          </div>
+          <div class="act"><button class="btn btn-ghost" id="btnFx" style="color:#cfcfcf">Get quote</button></div>
+          <div class="callout" id="fxOut"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t">Insights</span><span class="hint">live spend</span></div>
+          <div class="receipts" id="insights"><div class="mono" style="color:var(--ink-faint)">connect to load</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t">Independence</span><span class="hint">60-day rule</span></div>
+          <p class="sub" style="margin:0 0 8px">Cross-check your counterparties against the hackathon's independent-party rule — honestly labeled.</p>
+          <div class="act"><button class="btn btn-ghost" id="btnIndep" style="color:#cfcfcf">Check counterparties</button></div>
+          <div class="callout" id="indepOut"></div>
         </div>
       </div>
     </div>
@@ -200,7 +253,7 @@ label{font-family:'JetBrains Mono';font-size:.72rem;letter-spacing:.06em;text-tr
 
 <script>
 const $ = (id) => document.getElementById(id);
-let connected = false, address = null, rail = null, attr = null;
+let connected = false, address = null, rail = null, attr = null, peerHandle = null;
 
 /* ---- wallet connect (EIP-1193, no framework) ---- */
 function showVeil(){ $('veil').classList.add('show'); }
@@ -220,6 +273,11 @@ function finishConnect(addr){
   $('who').innerHTML = 'Signed in as <span class="wallet-chip" style="padding:2px 9px;font-size:.76rem">' + short + '</span>. Your lab is live — set limits, send tips.';
   $('btnConnect').textContent = short; $('btnConnect').style.padding='9px 15px';
   $('btnTip').disabled = false; hideVeil(); setAuthErr('');
+  // Register this wallet as a peer (idempotent) so the pay link + allowlist are real.
+  fetch(location.origin+'/users', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ chatId: address, wallet: address }) })
+    .then(r=>r.json()).then(d=>{ if(d && d.handle){ peerHandle = d.handle; } })
+    .catch(()=>{})
+    .finally(()=>{ try { if (typeof seedPayLink === 'function') seedPayLink(); } catch(e){} loadInsights(); });
   loadRails(); loadReceipts();
 }
 $('btnMeta').addEventListener('click', connectMeta);
@@ -312,11 +370,77 @@ $('btnDraw').addEventListener('click', async ()=>{
 $('btnLimits').addEventListener('click', async ()=>{
   const per=parseFloat(val('limPer')), day=parseFloat(val('limDay')), tot=parseFloat(val('limTotal'));
   if(isNaN(per)||isNaN(day)||isNaN(tot)){ out('limOut','err','Fill all three caps (numbers).'); return; }
-  const res = await fetch(location.origin+'/limits', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ perTxMicro:String(Math.round(per*1e6)), dayMicro:String(Math.round(day*1e6)), totalMicro:String(Math.round(tot*1e6)), payTo: address }) });
+  const res = await fetch(location.origin+'/limits', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ perTxMaxMicro:String(Math.round(per*1e6)), dayCapMicro:String(Math.round(day*1e6)), totalCapMicro:String(Math.round(tot*1e6)), payTo: address }) });
   const data = await res.json();
   out('limOut', res.ok?'ok':'err', res.ok ? ('Limits set on your lab: '+per+' / '+day+' / '+tot+' USAT') : (data.error||'could not set'));
 });
+
+/* ---- NEW: pay link, split bill, FX, insights, independence, MiniPay ---- */
+// MiniPay detection — the 18M-user mobile channel.
+const isMiniPay = !!(window.ethereum && window.ethereum.isMiniPay);
+if (isMiniPay) { const w=$('who'); if(w) w.textContent='MiniPay detected — you can pay in one tap. '+w.textContent; }
+
+function seedPayLink(){
+  // Prefer a real registered handle; fall back to the connected wallet address.
+  const target = (peerHandle ? peerHandle.replace(/^@/,'') : (address||'')).trim();
+  if(!target){ $('payLink').textContent='connect to load'; return; }
+  const url = location.origin+'/pay/'+encodeURIComponent(target);
+  $('payLink').textContent = url;
+  $('btnQR').href = '/api/payqr?target='+encodeURIComponent(target);
+}
+$('btnCopyLink').addEventListener('click', ()=>{
+  const url=$('payLink').textContent;
+  if(!url.startsWith('http')){ out('linkOut','warn','Connect a wallet first.'); return; }
+  (navigator.clipboard?navigator.clipboard.writeText(url):Promise.reject()).then(
+    ()=>{ out('linkOut','ok','Pay link copied — share it anywhere.'); },
+    ()=>{ out('linkOut','ok','Pay link: '+url); });
+});
+
+$('btnBill').addEventListener('click', async ()=>{
+  const title=val('billTitle')||'Bill', total=parseFloat(val('billTotal')), parts=parseInt(val('billParts'),10);
+  const recips=(val('billRecipients')||'').split(',').map(s=>s.trim()).filter(Boolean);
+  if(!total||total<=0){ out('billOut','err','Total must be > 0.'); return; }
+  if(recips.length<2){ out('billOut','err','Add at least 2 recipients (@handle).'); return; }
+  try{
+    const r=await fetch(location.origin+'/bills',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,totalMicro:String(Math.round(total*1e6)),parts:parts||recips.length,recipients:recips,chatId:peerHandle?peerHandle.replace(/^@/,''):null})});
+    const d=await r.json();
+    if(!r.ok){ out('billOut','err',d.error||'could not create'); return; }
+    out('billOut','ok','Bill '+d.id+' created · '+d.parts+' shares of '+(Number(d.shares[0])/1e6).toFixed(2)+' USAT. Share the pay link to collect.');
+  }catch(e){ out('billOut','err','Error: '+((e&&e.message)||e)); }
+});
+
+$('btnFx').addEventListener('click', async ()=>{
+  const corridor=$('fxCorridor').value, usat=parseFloat(val('fxUsat'));
+  if(!usat||usat<=0){ out('fxOut','err','Amount must be > 0.'); return; }
+  try{
+    const d=await (await fetch(location.origin+'/fx/quote?corridor='+corridor+'&usatMicro='+Math.round(usat*1e6)+'&direction=sell')).json();
+    if(d.error){ out('fxOut','err',d.error); return; }
+    out('fxOut', d.source==='live'?'ok':'warn', usat+' USAT → '+d.localOut+' '+d.symbol+' ('+d.source+')'+(d.note?(' · '+d.note):''));
+  }catch(e){ out('fxOut','err','Error: '+((e&&e.message)||e)); }
+});
+
+async function loadInsights(){
+  try{
+    const d=await (await fetch(location.origin+'/insights')).json();
+    const n=$('insights'); if(!n) return;
+    const rows=[['Allowed',d.allowed],['Blocked',d.blocked],['Total USAT',d.totalUsat],['Bills',d.counts?.bills||0],['Subscriptions',d.counts?.subscriptions||0],['Escrows',d.counts?.escrows||0],['Invoices',d.counts?.invoices||0]];
+    n.innerHTML=rows.map(([k,v])=>'<div class="row"><span>'+k+'</span><span class="mono">'+v+'</span></div>').join('');
+  }catch(e){}
+}
+
+$('btnIndep').addEventListener('click', async ()=>{
+  out('indepOut','warn','Probing counterparties on-chain…');
+  try{
+    const d=await (await fetch(location.origin+'/independence')).json();
+    if(d.error){ out('indepOut','err',d.error); return; }
+    out('indepOut', (d.independent>0)?'ok':'warn', d.total+' counterparties · '+d.independent+' independent · '+d.own+' own · '+d.unverified+' unverified (window 29 Jun–28 Aug)');
+  }catch(e){ out('indepOut','err','Error: '+((e&&e.message)||e)); }
+});
+
+setInterval(()=>{ if(connected) loadInsights(); }, 12000);
 loadRails();
+seedPayLink();
+loadInsights();
 </script>
 </body>
 </html>

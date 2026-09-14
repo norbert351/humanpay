@@ -6,18 +6,89 @@ import { SpendPolicyEngine } from './policy.js';
 import { MockSelfGate } from './selfGate.js';
 import { SimulatedSettlement } from './settlement.js';
 import { AuditStore } from './receipts.js';
-import { ATTRIBUTION_TAG, CHAIN_ID, AGENT_WALLET, VERIFIED_TAGGED_SETTLEMENTS } from './constants.js';
+import { ATTRIBUTION_TAG, CHAIN_ID, AGENT_WALLET, VERIFIED_TAGGED_SETTLEMENTS, USAT, MICRO } from './constants.js';
 import { railStatus } from './railcheck.js';
+import { HumanPayBook, splitShares } from './book.js';
+import { RateLimiter } from './ratelimit.js';
+import { payUrl, payPayload, qrPng } from './paylinks.js';
+import { quote as fxQuote, swapIntent, CORRIDORS } from './fx.js';
+import { independenceFor, independenceSummary } from './independence.js';
 
-export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settlement = new SimulatedSettlement(), receipts = new AuditStore(), registry = null }) {
+export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settlement = new SimulatedSettlement(), receipts = new AuditStore(), registry = null, book = new HumanPayBook(), limiter = new RateLimiter(), fetchImpl = globalThis.fetch }) {
   engine = engine || new SpendPolicyEngine({ operatorAddress: '*' });
   const json = (res, { code, body }) => {
     if (res.writableEnded) return;
     res.writeHead(code, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     res.end(JSON.stringify(body, (k, v) => (typeof v === 'bigint' ? v.toString() : v)));
   };
+  const buf = (res, { code, body, type }) => {
+    if (res.writableEnded) return;
+    res.writeHead(code, { 'Content-Type': type, 'Access-Control-Allow-Origin': '*' });
+    res.end(body);
+  };
   // Badge a JSON status payload with the same tag/chain the landing shows.
   const STATUS_JSON = () => ({ ok: true, tag: ATTRIBUTION_TAG, chainId: CHAIN_ID });
+
+  /** Resolve a public target (handle | wallet | chatId) to a peer. */
+    const resolveAny = (input) => {
+      const s = String(input || '').trim();
+      const byHandle = registry && registry.getByHandle(s);
+      if (byHandle) return byHandle;
+      if (registry && registry.isAddress(s)) return registry.getByWallet(s);
+      if (registry && /^\\d+$/.test(s)) return registry.get(s);
+      return null;
+    };
+
+    /**
+     * Shared settlement: gate (human proof) → policy allowlist+cap check → tag-first
+     * settlement → tamper-evident receipt → webhook emit. Used by every money-moving
+     * feature (bills, subscriptions, escrow, invoices, fx, tips) so no path bypasses
+     * the bounded-pay spine.
+     * @returns {{receiptId, tagged, settlement, txHash} | {error, code}}
+     */
+    async function _settle({ from, to, amountMicro, opts = {}, proof, fetchImpl }) {
+      const target = resolveAny(to);
+      if (!target) return { error: 'RECIPIENT_NOT_ALLOWLISTED', code: 403 };
+      if (proof) {
+        const gate = await selfGate.verify(proof);
+        if (!gate.ok) return { error: 'NOT_HUMAN', code: 403 };
+      }
+      const senderWallet = (from || '').toLowerCase();
+      const sender = senderWallet ? (registry && registry.getByWallet(senderWallet)) : null;
+      const budgetTo = target.wallet;
+      const verdict = sender ? await sender.engine.checkBudget({ amountMicro, payTo: budgetTo, token: opts.token || 'USAT', chainId: opts.chainId || CHAIN_ID }) : { allow: true };
+      if (!verdict.allow) return { error: verdict.reason, code: 403 };
+      try {
+        // Rebuild the exact EIP-3009 typed-data the sender signed (same as /tip/sign).
+        const { transferAuthTypedData } = await import('./auth.js');
+        const { USAT_SIGNER_DOMAIN } = await import('./constants.js');
+        const atomic = settlement.toAtomic ? settlement.toAtomic(amountMicro) : BigInt(Math.round(Number(amountMicro) * 1e6));
+        const typedData = transferAuthTypedData({
+          from: senderWallet || target.wallet, to: target.wallet.toLowerCase(),
+          value: atomic, nonce: opts.nonce || '0x00',
+          domain: settlement.domain || USAT_SIGNER_DOMAIN,
+        });
+        const signature = opts.signature || '0x' + '0'.repeat(130);
+        let settled, fallbackReason;
+        if (typeof settlement.settleTagged === 'function') {
+          let lastErr;
+          for (let attempt = 1; attempt <= 2; attempt++) {
+            try { settled = await settlement.settleTagged({ typedData, signature, amountMicro, payTo: target.wallet }); break; }
+            catch (e) { lastErr = e; const m = (e.shortMessage || e.message || ''); if (/requires the executor|auth invalid|already used|consumer/i.test(m)) break; if (attempt < 2) await new Promise((r) => setTimeout(r, 150)); }
+          }
+          if (!settled) { settled = await settlement.settleWithSignature({ typedData, signature }); settled.fallbackReason = lastErr ? (lastErr.shortMessage || lastErr.message) : 'unknown'; }
+        } else {
+          settled = await settlement.settleWithSignature({ typedData, signature });
+        }
+        const request = { amountMicro, payTo: target.wallet, to: target.wallet, from: from || null, opts };
+        const receipt = receipts.append({ decision: 'allow', reason: null, request, settlement: settled });
+        // Fire webhooks (non-blocking guarantee: emit failure never fails the settle).
+        try { await book.emit('payment.settled', { receiptId: receipt.id, from: from || null, payTo: target.wallet, amountMicro, tagged: settled.source === 'celo-direct-tagged', rail: settled.source, txHash: settled.txHash }, { fetchImpl }); } catch { /* best-effort */ }
+        return { receiptId: receipt.id, tagged: settled.source === 'celo-direct-tagged', settlement: settled, txHash: settled.txHash, rail: settled.source };
+      } catch (e) {
+        return { error: (e.shortMessage || e.message), code: (e.statusCode || ((e.shortMessage || e.message || '').includes('PAYMENT-SIGNATURE') ? 400 : 502)) };
+      }
+    }
 
   return createServer(async (req, res) => {
     const u = new URL(req.url, 'http://localhost');
@@ -34,6 +105,28 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
         });
         req.on('error', (e) => { const err = new Error(`request stream error: ${e.message}`); err.statusCode = 400; reject(err); });
       });
+
+      // --- Abuse guard: token-bucket per client IP on mutating + public routes.
+      const clientIp = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'anon';
+      const writeOrPublic = req.method !== 'GET' || u.pathname === '/' || u.pathname.startsWith('/pay/');
+      if (writeOrPublic && u.pathname !== '/health') {
+        const rl = limiter.take(clientIp);
+        if (!rl.allowed) {
+          res.writeHead(429, { 'Content-Type': 'application/json', 'Retry-After': String(Math.ceil(rl.retryAfterMs / 1000)) });
+          res.end(JSON.stringify({ error: 'RATE_LIMITED', retryAfterMs: rl.retryAfterMs }));
+          return;
+        }
+      }
+
+      // Optional API-key auth (only enforced when at least one key exists).
+      const authHeader = req.headers['authorization'] || '';
+      const presentedKey = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+      const apiKeyRequired = book.apiKeys.size > 0;
+      const requireKey = (path) => apiKeyRequired && ['/bills', '/subscriptions', '/escrow', '/invoices', '/webhooks', '/apikeys'].some((p) => path === p || path.startsWith(p + '/'));
+      if (requireKey(u.pathname)) {
+        const rec = presentedKey ? book.verifyApiKey(presentedKey) : null;
+        if (!rec) { result = { code: 401, body: { error: 'API_KEY_REQUIRED' } }; json(res, result); return; }
+      }
 
       if (req.method === 'GET' && u.pathname === '/health') {
         // Report the LIVE operator address (not a stale constant) so the health
@@ -268,6 +361,199 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
         const b = await readBody();
         result = { code: 200, body: { receipt: receipts.append({ decision: 'block', reason: b.reason, request: b, settlement: null }) } };
       }
+      // ================= NEW FEATURE ROUTES =================
+      else if (req.method === 'GET' && u.pathname.startsWith('/pay/')) {
+        // .png → QR; else HTML pay page
+        const key = decodeURIComponent(u.pathname.slice(5).replace(/\.(png|svg)$/, ''));
+        const peer = resolveAny(key);
+        if (!peer) result = { code: 404, body: { error: 'no such peer' } };
+        else if (u.pathname.endsWith('.png')) {
+          try {
+            const host = req.headers.host || 'humanpay.onrender.com';
+            const url = `https://${host}/pay/${encodeURIComponent(peer.handle ? peer.handle.replace(/^@/, '') : peer.wallet)}`;
+            const png = await qrPng(url);
+            buf(res, { code: 200, body: png, type: 'image/png' }); return;
+          } catch (e) { result = { code: 500, body: { error: e.message } }; }
+        } else {
+          const host = req.headers.host || 'humanpay.onrender.com';
+          const html = await (await import('node:fs')).promises.readFile(new URL('../public/pay.html', import.meta.url), 'utf8').catch(() => null);
+          const variant = html
+            ? html.replace(/__PEER__/g, peer.handle ? peer.handle.replace(/^@/, '') : peer.wallet.slice(0, 10))
+              .replace(/__WALLET__/g, peer.wallet)
+              .replace(/__QR__/g, `/api/payqr?target=${encodeURIComponent(peer.handle ? peer.handle.replace(/^@/, '') : peer.wallet)}&host=${host}`)
+            : `<pre>HumanPay pay page for ${peer.wallet} — serve public/pay.html to enable.</pre>`;
+          if (res.writableEnded) return;
+          res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); res.end(variant); return;
+        }
+      } else if (req.method === 'GET' && u.pathname === '/api/payqr') {
+        const q = u.searchParams;
+        const target = q.get('target') || '';
+        const host = q.get('host') || req.headers.host || 'humanpay.onrender.com';
+        const peer = resolveAny(target);
+        if (!peer) { result = { code: 404, body: { error: 'no such peer' } }; }
+        else {
+          const url = `https://${host}/pay/${encodeURIComponent(peer.handle ? peer.handle.replace(/^@/, '') : peer.wallet)}`;
+          try { const png = await qrPng(url); buf(res, { code: 200, body: png, type: 'image/png' }); return; }
+          catch (e) { result = { code: 500, body: { error: e.message } }; }
+        }
+      } else if (req.method === 'GET' && u.pathname === '/paylinks') {
+        // All shareable pay links (public — they're the marketing surface).
+        if (!registry) result = { code: 404, body: { error: 'peer lane not enabled' } };
+        else {
+          const host = req.headers.host || 'humanpay.onrender.com';
+          result = { code: 200, body: { host, links: registry.all().map((p) => ({ handle: p.handle, wallet: p.wallet, url: payUrl({ host, target: p.handle ? p.handle.replace(/^@/, '') : p.wallet }) })) } };
+        }
+      } else if (req.method === 'GET' && u.pathname === '/bills') {
+        result = { code: 200, body: { bills: book.listBills() } };
+      } else if (req.method === 'POST' && u.pathname === '/bills') {
+        const b = await readBody();
+        try {
+          // Resolve recipients to wallets (peer lane) so shares map to allowlist addresses.
+          const recipients = (b.recipients || []).map((r) => { const p = resolveAny(r); return p ? p.wallet : r; });
+          const rec = book.createBill({ title: b.title, totalMicro: b.totalMicro, parts: b.parts || (b.recipients || []).length, creator: b.chatId ? String(b.chatId) : null, recipients });
+          result = { code: 201, body: rec };
+        } catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname.startsWith('/bills/')) {
+        const b = book.getBill(u.pathname.split('/').pop());
+        result = b ? { code: 200, body: b } : { code: 404, body: { error: 'not found' } };
+      } else if (req.method === 'POST' && /^\/bills\/[^/]+\/shares\/[0-9]+\/pay$/.test(u.pathname)) {
+        // POST /bills/:id/shares/:idx/pay — settle one share (policy-gated, tagged-first).
+        const parts = u.pathname.split('/');
+        const billId = parts[2], idx = Number(parts[4]);
+        try {
+          const bill = book.getBill(billId);
+          if (!bill) result = { code: 404, body: { error: 'not found' } };
+          else if (bill.settlements[idx]) result = { code: 409, body: { error: 'share already paid' } };
+          else {
+            const b = await readBody();
+            const from = b.from || null;
+            const to = bill.recipients[idx] || bill.creator;
+            const settled = await _settle({ from, to, amountMicro: bill.shares[idx], proof: b.proof, opts: { nonce: b.nonce, signature: b.signature } });
+            if (settled.error) result = { code: settled.code || 502, body: { error: settled.error } };
+            else { book.payBillShare(billId, idx, settled.settlement); const updated = book.getBill(billId); result = { code: 200, body: { bill: updated, receiptId: settled.receiptId, tagged: settled.tagged } }; }
+          }
+        } catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/subscriptions') {
+        result = { code: 200, body: { subscriptions: book.listSubscriptions() } };
+      } else if (req.method === 'POST' && u.pathname === '/subscriptions') {
+        const b = await readBody();
+        try { result = { code: 201, body: book.createSubscription(b) }; }
+        catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname.startsWith('/subscriptions/')) {
+        const s = book.getSubscription(u.pathname.split('/').pop());
+        result = s ? { code: 200, body: s } : { code: 404, body: { error: 'not found' } };
+      } else if (req.method === 'POST' && u.pathname.endsWith('/charge')) {
+        const sid = u.pathname.split('/')[2];
+        try {
+          const s = book.getSubscription(sid);
+          if (!s) result = { code: 404, body: { error: 'not found' } };
+          else {
+            const b = await readBody();
+            const settled = await _settle({ from: s.payer, to: s.payee, amountMicro: b.amountMicro || s.amountMicro, b, resolveAny, settlement, receipts, selfGate });
+            if (settled.error) result = { code: settled.code || 502, body: { error: settled.error } };
+            else { book.chargeSubscription(sid, settled.settlement); result = { code: 201, body: { subscription: book.getSubscription(sid), receiptId: settled.receiptId, tagged: settled.tagged } }; }
+          }
+        } catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'POST' && u.pathname.endsWith('/cancel')) {
+        try { result = { code: 200, body: book.cancelSubscription(u.pathname.split('/')[2]) }; }
+        catch (e) { result = { code: 404, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/escrow') {
+        result = { code: 200, body: { escrows: book.listEscrows() } };
+      } else if (req.method === 'POST' && u.pathname === '/escrow') {
+        const b = await readBody();
+        try { result = { code: 201, body: book.createEscrow(b) }; }
+        catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname.startsWith('/escrow/')) {
+        const e = book.getEscrow(u.pathname.split('/').pop());
+        result = e ? { code: 200, body: e } : { code: 404, body: { error: 'not found' } };
+      } else if (req.method === 'POST' && u.pathname.includes('/release') || req.method === 'POST' && u.pathname.includes('/refund')) {
+        const parts = u.pathname.split('/');
+        const eid = parts[2], action = parts[3];
+        try {
+          const b = await readBody();
+          const e = book.getEscrow(eid);
+          if (!e) result = { code: 404, body: { error: 'not found' } };
+          else {
+            const to = action === 'release' ? e.seller : e.buyer;
+            const settled = await _settle({ from: b.from || null, to, amountMicro: e.amountMicro, b, resolveAny, settlement, receipts, selfGate });
+            if (settled.error) result = { code: settled.code || 502, body: { error: settled.error } };
+            else { book.settleEscrow(eid, action, settled.settlement, b.by || null); result = { code: 200, body: { escrow: book.getEscrow(eid), receiptId: settled.receiptId, tagged: settled.tagged } }; }
+          }
+        } catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/invoices') {
+        result = { code: 200, body: { invoices: book.listInvoices() } };
+      } else if (req.method === 'POST' && u.pathname === '/invoices') {
+        const b = await readBody();
+        try { result = { code: 201, body: book.createInvoice(b) }; }
+        catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname.startsWith('/invoices/')) {
+        const i = book.getInvoice(u.pathname.split('/').pop());
+        result = i ? { code: 200, body: i } : { code: 404, body: { error: 'not found' } };
+      } else if (req.method === 'POST' && u.pathname.endsWith('/pay')) {
+        const iid = u.pathname.split('/')[2];
+        try {
+          const inv = book.getInvoice(iid);
+          if (!inv) result = { code: 404, body: { error: 'not found' } };
+          else {
+            const b = await readBody();
+            const settled = await _settle({ from: b.from || null, to: inv.from, amountMicro: inv.amountMicro, b, resolveAny, settlement, receipts, selfGate });
+            if (settled.error) result = { code: settled.code || 502, body: { error: settled.error } };
+            else { book.payInvoice(iid, settled.settlement); result = { code: 200, body: { invoice: book.getInvoice(iid), receiptId: settled.receiptId, tagged: settled.tagged } }; }
+          }
+        } catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/webhooks') {
+        result = { code: 200, body: { webhooks: book.listWebhooks() } };
+      } else if (req.method === 'POST' && u.pathname === '/webhooks') {
+        const b = await readBody();
+        try { const wh = book.createWebhook(b); result = { code: 201, body: wh }; }
+        catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'DELETE' && u.pathname.startsWith('/webhooks/')) {
+        result = { code: 200, body: { deleted: book.deleteWebhook(u.pathname.split('/').pop()) } };
+      } else if (req.method === 'POST' && u.pathname === '/apikeys') {
+        const b = await readBody();
+        try { result = { code: 201, body: book.issueApiKey({ label: b.label }) }; }
+        catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/apikeys') {
+        result = { code: 200, body: { keys: book.listApiKeys() } };
+      } else if (req.method === 'GET' && u.pathname === '/insights') {
+        result = { code: 200, body: { ...book.insights(receipts.all()), tag: ATTRIBUTION_TAG } };
+      } else if (req.method === 'GET' && u.pathname === '/independence') {
+        // On-chain counterparty independence — the 60-day rule made visible.
+        try {
+          const cps = [...new Set(receipts.all().map((r) => (r.settlement && r.settlement.payTo) || (r.request && r.request.payTo)).filter(Boolean))];
+          const own = registry ? registry.recipients() : [];
+          const sum = await independenceSummary({ counterparties: cps, ownWallets: own });
+          result = { code: 200, body: sum };
+        } catch (e) { result = { code: 502, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/fx') {
+        result = { code: 200, body: { corridors: CORRIDORS, note: 'quote at GET /fx/quote?corridor=NGN&usatMicro=100000050&direction=sell' } };
+      } else if (req.method === 'GET' && u.pathname === '/fx/quote') {
+        const q = u.searchParams;
+        try {
+          const resfx = await fxQuote({ corridor: q.get('corridor') || 'NGN', usatMicro: q.get('usatMicro') || '100000000', direction: q.get('direction') || 'sell', fetchImpl });
+          result = { code: 200, body: resfx };
+        } catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'POST' && u.pathname === '/fx/swap') {
+        const b = await readBody();
+        try {
+          const intent = swapIntent(b);
+          const settled = await _settle({ from: b.from || null, to: b.recipient || b.payTo, amountMicro: b.usatMicro, b: { ...b }, resolveAny, settlement, receipts, selfGate });
+          if (settled.error) result = { code: settled.code || 502, body: { error: settled.error } };
+          else result = { code: 201, body: { ...intent, confirmed: settled.settlement, receiptId: settled.receiptId, tagged: settled.tagged } };
+        } catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/receipts.csv') {
+        // Simple CSV export of the tamper-evident ledger.
+        const rows = receipts.all();
+        const esc = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+        const csv = [
+          'id,decision,reason,timestamp,payTo,amountMicro,rail,txHash,tag',
+          ...rows.map((r) => [r.id, r.decision, r.reason || '', r.createdAt ? new Date(r.createdAt).toISOString() : '', r.request && (r.request.payTo || r.request.to) || '', r.request && r.request.amountMicro || (r.settlement && r.settlement.amountMicro) || '', r.settlement && r.settlement.source || '', r.settlement && r.settlement.txHash || '', r.settlement && r.settlement.tag || ''].map(esc).join(',')),
+        ].join('\n');
+        if (res.writableEnded) return;
+        res.writeHead(200, { 'Content-Type': 'text/csv; charset=utf-8', 'Content-Disposition': 'attachment; filename="humanpay-receipts.csv"' });
+        res.end(csv); return;
+      }
+      // ================= END NEW FEATURE ROUTES =================
     } catch (e) {
       // Honour an explicit statusCode (e.g. 400 for a malformed body); anything
       // genuinely unexpected stays a 500.

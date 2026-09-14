@@ -14,6 +14,7 @@ import { X402FacilitatorSettlement } from './x402Celo.js';
 import { TeleMessageHandler } from './telegram.js';
 import { P2PTeleMessageHandler } from './p2p.js';
 import { UserRegistry } from './users.js';
+import { HumanPayBook } from './book.js';
 import { USAT_ADDRESS } from './constants.js';
 
 /** Resolve the settlement rail: real x402 facilitator when creds are present, else sim. */
@@ -56,6 +57,7 @@ export function buildRuntime() {
     engine, selfGate, settlement, receipts, operatorSign, operatorAddress: opAcc.address,
   });
   const registry = new UserRegistry();
+  const book = new HumanPayBook();
   const p2p = new P2PTeleMessageHandler({ registry, selfGate, settlement, receipts });
   // Dispatcher: P2P commands (register/key/limit/tip/…) route to the peer handler;
   // anything else (legacy agent /pay) falls through to the single-operator handler.
@@ -67,7 +69,7 @@ export function buildRuntime() {
     legacy: (t) => legacyHandler.handle(t),
     p2p,
   };
-  return { handler, p2p, registry, settlement, selfGate, receipts, engine, operatorAddress: opAcc.address };
+  return { handler, p2p, registry, book, settlement, selfGate, receipts, engine, operatorAddress: opAcc.address };
 }
 
 /**
