@@ -95,8 +95,26 @@ label{font-family:'JetBrains Mono';font-size:.72rem;letter-spacing:.06em;text-tr
 .pill.allow{color:var(--green);background:rgba(62,207,142,.12)}
 .pill.block{color:var(--danger);background:rgba(255,122,107,.12)}
 
-@media (max-width:860px){.grid{grid-template-columns:1fr}.stat-row{grid-template-columns:1fr 1fr}}
-@media (max-width:560px){.stat-row{grid-template-columns:1fr}.field-row{grid-template-columns:1fr}.topbar-right .home-link{display:none}.wrap{padding:0 16px}}
+@media (max-width:860px){.grid{grid-template-columns:1fr}.stat-row{grid-template-columns:1fr 1fr}.layout{padding-top:20px}}
+@media (max-width:560px){
+  .stat-row{grid-template-columns:1fr}
+  .field-row{grid-template-columns:1fr}
+  .topbar-right .home-link{display:none}
+  .wrap{padding:0 16px}
+  .topbar-in{height:56px}
+  .brand{font-size:.95rem}
+  #btnConnect{padding:8px 12px;font-size:.78rem}
+  .wallet-chip{max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  h2.page-title{font-size:1.4rem}
+  .sub{font-size:.88rem}
+  .card{padding:18px}
+  .stat-row{gap:10px}
+  .stat{display:flex;justify-content:space-between;align-items:center;padding:12px 14px}
+  .stat .lab{font-size:.6rem}
+  .stat .val{font-size:1.4rem;margin-top:0}
+  .act{gap:8px}
+  .act .btn{flex:1 1 auto}
+}
 </style>
 </head>
 <body>
