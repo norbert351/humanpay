@@ -23,10 +23,22 @@ export class PersistentAuditStore {
     this.byIndex = new Map();
     this._persist = Boolean(path);
     if (path) {
-      if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
-      this.db = new DatabaseSync(path);
-      this._initSchema();
-      this._load();
+      try {
+        if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true });
+        this.db = new DatabaseSync(path);
+        this._initSchema();
+        this._load();
+      } catch (e) {
+        // A non-writable/missing volume (e.g. Render free tier with no disk at
+        // the configured path) must NOT crash the process on boot — that fails
+        // the health check and silently pins the old deploy. Degrade to the
+        // in-memory behaviour instead, and say so loudly.
+        console.warn(`[humanpay] persistent audit store disabled (${e.message}); using in-memory receipts`);
+        this._persist = false;
+        this.db = null;
+        this.chain = [];
+        this.byIndex = new Map();
+      }
     }
   }
 
