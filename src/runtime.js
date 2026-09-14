@@ -6,6 +6,7 @@
 import { privateKeyToAccount } from 'viem/accounts';
 import { SpendPolicyEngine, authMessage } from './policy.js';
 import { AuditStore } from './receipts.js';
+import { PersistentAuditStore } from './receiptStore.js';
 import { MockSelfGate } from './selfGate.js';
 import { SelfRegistryGate } from './selfRegistry.js';
 import { SimulatedSettlement } from './settlement.js';
@@ -46,7 +47,11 @@ export function buildRuntime() {
   const operatorSign = async (req) => opAcc.signMessage({ message: authMessage(req) });
   const settlement = resolveSettlement();
   const selfGate = resolveSelfGate();
-  const receipts = new AuditStore(process.env.AUDIT_SECRET);
+  // Persistent tamper-evident receipt log when AUDIT_DB_PATH is set (survives
+  // restarts/redeploys); else the in-memory AuditStore (hermetic tests, no disk).
+  const receipts = process.env.AUDIT_DB_PATH
+    ? new PersistentAuditStore({ secret: process.env.AUDIT_SECRET, path: process.env.AUDIT_DB_PATH })
+    : new AuditStore(process.env.AUDIT_SECRET);
   const legacyHandler = new TeleMessageHandler({
     engine, selfGate, settlement, receipts, operatorSign, operatorAddress: opAcc.address,
   });

@@ -112,6 +112,75 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
             }
           }
         }
+      } else if (req.method === 'POST' && u.pathname === '/tip/sign') {
+        // Self-custody tip step 2: the sender submits the EIP-3009 signature they
+        // produced in their own wallet. We settle it — preferring the ERC-8021
+        // TAGGED direct path (leaderboard-credited) when the rail supports it and
+        // the authorizer is the executor, falling back to a facilitator relay
+        // (honestly labelled, because a relay can never carry our tag).
+        if (!registry) result = { code: 404, body: { error: 'peer lane not enabled' } };
+        else {
+          const b = await readBody();
+          const { amountMicro, payTo, nonce, from, signature } = b;
+          if (!signature || !/^0x[0-9a-fA-F]{130}$/.test(String(signature))) {
+            result = { code: 400, body: { error: 'PAYMENT-SIGNATURE: invalid signature' } };
+          } else if (!payTo) result = { code: 400, body: { error: 'payTo required' } };
+          else {
+            const target = registry.resolveTarget(String(payTo));
+            if (!target) result = { code: 403, body: { error: 'RECIPIENT_NOT_ALLOWLISTED' } };
+            else {
+              const senderWallet = (from || '').toLowerCase();
+              const sender = senderWallet ? registry.getByWallet(senderWallet) : null;
+              const budgetTo = target.wallet;
+              const verdict = sender
+                ? await sender.engine.checkBudget({ amountMicro, payTo: budgetTo, token: 'USAT', chainId: 42220 })
+                : { allow: true }; // no registered sender → rely on the on-chain signature + allowlist
+              if (!verdict.allow) result = { code: 403, body: { error: verdict.reason } };
+              else {
+                try {
+                  // Rebuild the exact typed-data the sender signed (same shape as
+                  // /tip/offline-auth) so settleTagged/settleWithSignature can parse it.
+                  const { transferAuthTypedData } = await import('./auth.js');
+                  const { USAT_SIGNER_DOMAIN } = await import('./constants.js');
+                  const atomic = settlement.toAtomic ? settlement.toAtomic(amountMicro) : BigInt(Number(amountMicro) * 1_000_000);
+                  const typedData = transferAuthTypedData({
+                    from: senderWallet || target.wallet,
+                    to: target.wallet.toLowerCase(),
+                    value: typeof atomic === 'bigint' ? atomic : BigInt(atomic),
+                    nonce: nonce || '0x00',
+                    domain: settlement.domain || USAT_SIGNER_DOMAIN,
+                  });
+                  let settled, fallbackReason;
+                  if (typeof settlement.settleTagged === 'function') {
+                    let lastErr;
+                    for (let attempt = 1; attempt <= 3; attempt++) {
+                      try {
+                        settled = await settlement.settleTagged({ typedData, signature, amountMicro, payTo: target.wallet });
+                        break;
+                      } catch (e) {
+                        lastErr = e;
+                        const msg = e.shortMessage || e.message || '';
+                        if (/requires the executor|auth invalid|already used|consumer/i.test(msg)) break;
+                        if (attempt < 3) await new Promise((r) => setTimeout(r, 1200 * attempt));
+                      }
+                    }
+                    if (!settled) {
+                      settled = await settlement.settleWithSignature({ typedData, signature });
+                      settled.fallbackReason = lastErr ? (lastErr.shortMessage || lastErr.message) : 'unknown';
+                    }
+                  } else {
+                    settled = await settlement.settleWithSignature({ typedData, signature });
+                  }
+                  const receipt = receipts.append({ decision: 'allow', reason: null, request: { amountMicro, payTo: target.wallet, nonce, from }, settlement: settled });
+                  result = { code: 201, body: { receiptId: receipt.id, tagged: settled.source === 'celo-direct-tagged', rail: settled.source || '?', txHash: settled.txHash || null, explorer: settled.explorer || null, fallbackReason: settled.fallbackReason || null } };
+                } catch (e) {
+                  const code = e.statusCode || (e.shortMessage || e.message || '').includes('PAYMENT-SIGNATURE') ? 400 : 502;
+                  result = { code, body: { error: e.message } };
+                }
+              }
+            }
+          }
+        }
       } else if (req.method === 'GET' && u.pathname === '/receipts') {
         result = { code: 200, body: receipts.all() };
       } else if (req.method === 'GET' && u.pathname === '/attribution') {

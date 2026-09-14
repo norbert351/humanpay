@@ -105,12 +105,15 @@ Every claim in this README is verifiable with `curl` against the live service �
 | `GET /users/:chatId\|@handle\|0x…` | one peer's wallet + registered bound policy |
 | `POST /users` | register a wallet into the allowlist |
 | `POST /tip/offline-auth` | returns the EIP-3009 `TransferWithAuthorization` typed-data the **sender** signs (self-custody) |
+| `POST /tip/sign` | settle a user-signed EIP-3009 authorization — **tagged `celo-direct-tagged`** when the executor signs, else an honestly-labelled relay |
 | `GET /receipts`, `GET /receipts/:id`, `GET /proof` | the tamper-evident hash-chained ledger + chain verification |
 | `POST /limits`, `POST /pay` | single-operator bounded-pay path (policy kernel, ERC-8021-tagged settlement) |
 
 ## Status & honest limits (2026-09-12 — REAL settlement verified)
 
-- **Implemented + tested:** **78 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`, which now seeds **verified on-chain evidence** that survives redeploys), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement**, SelfRegistry gate, rail-readiness.
+- **Persistent receipt ledger:** set `AUDIT_DB_PATH` and `AuditStore` swaps to `PersistentAuditStore` (node:sqlite, zero new deps) — receipts survive restarts/redeploys, keeping the exact hash-chain integrity (verified by a tamper-detection test that edits the DB directly). Without it, the store is the original in-memory `AuditStore`.
+
+- **Implemented + tested:** **82 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`, which now seeds **verified on-chain evidence** that survives redeploys), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement + `/tip/sign`**, SelfRegistry gate, rail-readiness, **persistent store**. 78 existing + 4 new (persist reload, persist tamper, `/tip/sign` signature-shape + settle).
 - **✅ REAL VALUE MOVED ON CELO MAINNET** (the thing this hackathon scores):
   | Tx | What | Rail |
   |---|---|---|

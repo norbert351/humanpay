@@ -17,6 +17,11 @@ services:
         value: 22.23.1
       - key: PORT
         value: 10000
+      # Persist the tamper-evident receipt ledger so it survives restarts/redeploys.
+      # On Render, point this at a mounted disk volume path (e.g. /var/data/humanpay.db,
+      # with a Persistent Disk attached) OR set it to a standalone path if you add one.
+      - key: AUDIT_DB_PATH
+        value: /var/data/humanpay.db
       # --- credentials (fill in Render dashboard as secret env vars) ---
       - key: TELEGRAM_BOT_TOKEN
         sync: false                      # set the live value in Dashboard -> Environment

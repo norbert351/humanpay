@@ -268,8 +268,9 @@ $('btnTip').addEventListener('click', async ()=>{
     if(res.ok && data.typedData && window.ethereum){
       // real self-custody signature
       const sig = await window.ethereum.request({ method:'eth_signTypedData_v4', params:[address, JSON.stringify(data.typedData)] });
-      const settle = await fetch(location.origin+'/tip/sign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ amountMicro, payTo: to, signature: sig }) }).then(r=>r.json());
-      out('tipOut','ok','Sent · '+JSON.stringify({rail: settle.rail||'?', tagged: !!settle.tagged}) + (settle.receiptId?(' · receipt '+settle.receiptId):''));
+      const settle = await fetch(location.origin+'/tip/sign', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ amountMicro, payTo: to, from: address, signature: sig }) }).then(r=>r.json());
+      out('tipOut','ok','Sent · '+(settle.tagged?'✓ ERC-8021 tagged':'relayed')+' · rail '+(settle.rail||'?')+(settle.txHash||settle.explorer?(' · '+((settle.txHash||settle.explorer)||'').slice(0,24)):'')+(settle.fallbackReason?(' · note: '+String(settle.fallbackReason).slice(0,60)):'')+(settle.error?(' · '+settle.error):''));
+      loadRails();
     } else if(data.error){
       out('tipOut','err', (data.reason||data.error));
     } else {
