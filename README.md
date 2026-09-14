@@ -109,6 +109,30 @@ Every claim in this README is verifiable with `curl` against the live service �
 | `GET /receipts`, `GET /receipts/:id`, `GET /proof` | the tamper-evident hash-chained ledger + chain verification |
 | `POST /limits`, `POST /pay` | single-operator bounded-pay path (policy kernel, ERC-8021-tagged settlement) |
 
+### Product features (beyond the hackathon)
+
+Every money-moving route below routes through the **same** `_settle()` spine: human-proof gate → policy allowlist + caps → tag-first settlement → tamper-evident receipt → webhook emit. No feature can bypass the anti-drain gates.
+
+| Route | What it does |
+|---|---|
+| `GET /pay/@handle` · `GET /pay/@handle.png` · `GET /api/payqr` | **Owned pay links + QR** — a shareable/scannable channel to pay any registered peer |
+| `GET /paylinks` | Enumerate every peer's pay link (the distribution surface) |
+| `POST /bills`, `GET /bills(/:id)`, `POST /bills/:id/shares/:idx/pay` | **Split-a-bill** — remainder-safe integer shares, per-share settlement |
+| `POST /subscriptions`, `GET /subscriptions(/:id)`, `POST …/charge`, `POST …/cancel` | **Recurring bounded pay** — interval-capped, policy-gated charges |
+| `POST /escrow`, `GET /escrow(/:id)`, `POST …/release`, `POST …/refund` | **Escrow** — hold → release/refund, one-way state machine |
+| `POST /invoices`, `GET /invoices(/:id)`, `POST …/pay` | **Payment requests / invoicing** |
+| `GET/POST/DELETE /webhooks` | **Webhooks** — HMAC-signed `payment.settled` delivery |
+| `POST /apikeys`, `GET /apikeys` | **API keys** — when ≥1 key exists, book endpoints require `Authorization: Bearer hp_…` |
+| `GET /insights` | **Spend insights** — allowed/blocked, total USAT, by-day, top counterparties |
+| `GET /independence` | **Independent-party rule** (60-day window) checked on-chain, honestly labeled |
+| `GET /fx` · `GET /fx/quote` · `POST /fx/swap` | **FX corridors** — USAT ↔ cNGN/wBRL/wARS (live when `TEXTILE_FX_URL` set, else a labeled estimate) |
+| `GET /receipts.csv` | **CSV export** of the tamper-evident ledger |
+| Rate limiting | token-bucket per IP on public/mutating routes → `429 + Retry-After` |
+
+UI: `public/pay.html` (QR pay page + MiniPay deep-link) and the `/app` **Tools** panels (pay link, split bill, FX quote, insights, independence, CSV export). Connecting a wallet registers it as a peer so its pay link resolves.
+
+**Honest caveat:** the `HumanPayBook` (bills / subscriptions / escrow / invoices / webhooks / API keys) is in-memory, like the receipt store before persistence — it resets on a cold start. Wiring it to the same `AUDIT_DB_PATH` SQLite store is the next durability step (receipts and the two on-chain rails are already durable/real).
+
 ## Status & honest limits (2026-09-12 — REAL settlement verified)
 
 - **Persistent receipt ledger:** set `AUDIT_DB_PATH` and `AuditStore` swaps to `PersistentAuditStore` (node:sqlite, zero new deps) — receipts survive restarts/redeploys, keeping the exact hash-chain integrity (verified by a tamper-detection test that edits the DB directly). Without it, the store is the original in-memory `AuditStore`.
