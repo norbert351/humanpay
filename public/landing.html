@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <title>HumanPay — your agent is on a leash, provably</title>
 <meta name="description" content="HumanPay: agents move real USAT on Celo, only inside human-set limits, only after proof-of-human, every decision on a tamper-evident receipt. Launch the app to connect your wallet." />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -42,8 +43,9 @@ img{display:block;max-width:100%}
 .hero-grid{display:grid;grid-template-columns:1.05fr 1fr;gap:56px;align-items:center}
 .hero-visual{position:relative}
 .hero-img-frame{position:relative;border-radius:24px;overflow:hidden;border:1px solid var(--line2);box-shadow:0 40px 90px rgba(0,0,0,.55)}
-.hero-img-frame img{width:100%;height:560px;object-fit:cover}
-.hero-img-frame::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,13,12,0) 45%,rgba(10,13,12,.55) 100%);border-radius:24px}
+.hero-img-frame img{width:100%;height:560px;object-fit:cover;filter:blur(4px) saturate(.92) brightness(.96);transform:scale(1.06);transition:filter .6s cubic-bezier(.16,1,.3,1),transform .6s cubic-bezier(.16,1,.3,1)}
+.hero-img-frame::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,13,12,0) 45%,rgba(10,13,12,.6) 100%);border-radius:24px}
+.hero-img-frame:hover img{filter:blur(1.5px) saturate(1) brightness(1);transform:scale(1.03)}
 .glow-disc{position:absolute;inset:8%;z-index:0;filter:blur(60px);border-radius:50%;opacity:.4;background:conic-gradient(from 0deg,transparent,#3ECF8E40,transparent 40%,#E9C46A30,transparent 72%);animation:spin 24s linear infinite}
 @keyframes spin{to{transform:rotate(360deg)}}
 .hero-meta{display:flex;justify-content:space-between;align-items:center;margin-top:20px;padding:0 4px;gap:10px;flex-wrap:wrap}
@@ -65,7 +67,10 @@ h1.hero-title{font-size:clamp(2.2rem,4.6vw,3.5rem);font-weight:700;line-height:1
 .split.rev .split-text{order:2}
 .split.rev .split-visual{order:1}
 @media (min-width:901px){ .split:nth-of-type(even).rev .split-text{order:1}.split:nth-of-type(even).rev .split-visual{order:2} }
-.split-visual img{width:100%;height:400px;object-fit:cover;border-radius:20px;border:1px solid var(--line2);box-shadow:0 30px 70px rgba(0,0,0,.45)}
+.split-visual{position:relative;overflow:hidden;border-radius:20px;border:1px solid var(--line2);box-shadow:0 30px 70px rgba(0,0,0,.45)}
+.split-visual img{width:100%;height:400px;object-fit:cover;filter:blur(2.5px) saturate(.94) brightness(.97);transform:scale(1.05);transition:filter .6s cubic-bezier(.16,1,.3,1),transform .6s cubic-bezier(.16,1,.3,1)}
+.split-visual::after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(10,13,12,0) 55%,rgba(10,13,12,.35) 100%)}
+.split-visual:hover img{filter:blur(0) saturate(1) brightness(1);transform:scale(1.02)}
 .section-label{font-family:'JetBrains Mono';font-size:.72rem;letter-spacing:.15em;text-transform:uppercase;color:var(--gold);margin-bottom:14px}
 h2.big{font-size:clamp(1.7rem,3.2vw,2.4rem);line-height:1.12}
 .lead{color:var(--ink-dim);max-width:520px;margin-top:16px;font-size:1.02rem}

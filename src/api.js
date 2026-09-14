@@ -39,11 +39,11 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
         // Report the LIVE operator address (not a stale constant) so the health
         // check never misrepresents which wallet the process actually runs as.
         result = { code: 200, body: { ok: true, tag: ATTRIBUTION_TAG, chainId: CHAIN_ID, agentWallet: engine.operatorAddress && engine.operatorAddress !== '*' ? engine.operatorAddress : AGENT_WALLET, peers: registry ? registry.count() : 0, telegram: !!process.env.TELEGRAM_BOT_TOKEN, settlement: settlement?.constructor?.name || null, self: selfGate?.constructor?.name || null } };
-      } else if (req.method === 'GET' && u.pathname.startsWith('/images/')) {
-        // Static landing imagery (self-contained; never hotlink the remote CDN).
+      } else if (req.method === 'GET' && (u.pathname.startsWith('/images/') || u.pathname === '/favicon.svg')) {
+        // Static landing imagery + favicon (self-contained; never hotlink the remote CDN).
         const { readFileSync } = await import('node:fs');
-        const name = decodeURIComponent(u.pathname.split('/').pop());
-        const path = new URL(`../public/images/${name}`, import.meta.url);
+        const name = u.pathname === '/favicon.svg' ? 'favicon.svg' : decodeURIComponent(u.pathname.split('/').pop());
+        const path = new URL(`../public/${u.pathname === '/favicon.svg' ? 'favicon.svg' : `images/${name}`}`, import.meta.url);
         let buf;
         try { buf = readFileSync(path); } catch { buf = null; }
         if (buf) {

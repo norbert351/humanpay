@@ -99,7 +99,8 @@ Intentional extreme: **premium / editorial-trust** (not crypto-terminal neon, no
 
 - Rule: search **HumanPay's own metaphor** (the controlled agent), not generic "crypto/server/circuit" stock.
 - Two chosen hero candidates are dark (mean brightness ~95) → safe for framed use; bright spares exist if a scrim is needed.
-- Favicon: crisp designed SVG (shield + ledger bars, on-brand palette) — *deferred, tracked in audit §B*.
+- **Image treatment (approved + shipped): deliberate soft-focus blur.** Hero `blur(4px)` + `scale(1.06)`; section images `blur(2.5px)` + `scale(1.05)`, low-chroma `saturate(.92-.94)` to sit beneath the copy; hover sharpens to `~1.5px/0` with a 600ms ease. Scale-offset prevents blurred-edge fringing. READ as intentional (verified visually).
+- **Favicon: designed SVG** (`public/favicon.svg`) — ink rounded-square, gradient shield stroke + three ledger bars (green→soft-green→gold) echoing the tamper-evident chain. Served at `/favicon.svg` on both pages; canvas-rendered + OK.
 
 ---
 
@@ -146,10 +147,10 @@ Intentional extreme: **premium / editorial-trust** (not crypto-terminal neon, no
 | Section | Status | Notes |
 |---|---|---|
 | **A. Uniqueness** | ✅ | Fresh pair (Space Grotesk/Instrument Sans), own palette, split hero w/ real image. No banned moves. |
-| **B. Real visuals** | ✅ (1 deferred) | Real photography in hero + every section, subject-matched. **Deferred:** designed SVG favicon not yet built. |
+| **B. Real visuals** | ✅ | Real photography in hero + every section, subject-matched, **deliberate soft-focus blur**; designed SVG favicon live at `/favicon.svg`. No deferred items. |
 | **C. New-user comprehension** | ✅ | Plain hero + 3 benefit cards + 3-step how-it-works; landing/app split; `/app` auth-gated w/ Connect Wallet. |
 | **D. States & feedback** | ✅ | Loading/empty/error/validation/micro-feedback all present (see §9). |
-| **E. Mobile & a11y** | ⚠️ partial | Breakpoints 900/560px shipped + verified via `styleSheets`. **Deferred:** true 390px capture; `prefers-reduced-motion` block; explicit focus-ring pass. |
+| **E. Mobile & a11y** | ⚠️ partial | Breakpoints 900/560px shipped + `prefers-reduced-motion` block added. **Deferred:** true 390px capture; explicit focus-ring pass. |
 | **F. Copy polish** | ✅ | Duplicate-scan pending final pass; tagline identical hero↔CTA; labels honest. |
 | **G. Live-data correctness** | ✅ | Field-name contract traced (`/rails.rails.funding.usat`, `attr.taggedCount`); micro-units ÷ at call site. |
 
