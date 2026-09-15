@@ -139,19 +139,20 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
         // Report the LIVE operator address (not a stale constant) so the health
         // check never misrepresents which wallet the process actually runs as.
         result = { code: 200, body: { ok: true, tag: ATTRIBUTION_TAG, chainId: CHAIN_ID, agentWallet: engine.operatorAddress && engine.operatorAddress !== '*' ? engine.operatorAddress : AGENT_WALLET, peers: registry ? registry.count() : 0, telegram: !!process.env.TELEGRAM_BOT_TOKEN, settlement: settlement?.constructor?.name || null, self: selfGate?.constructor?.name || null } };
-      } else if (req.method === 'GET' && (u.pathname.startsWith('/images/') || u.pathname === '/favicon.svg')) {
-        // Static landing imagery + favicon (self-contained; never hotlink the remote CDN).
+      } else if ((req.method === 'GET' || req.method === 'HEAD') && (u.pathname.startsWith('/images/') || u.pathname === '/favicon.svg' || u.pathname.endsWith('.mp4'))) {
+        // Static landing imagery + favicon + demo video (self-contained; never hotlink the remote CDN).
         const { readFileSync } = await import('node:fs');
         const name = u.pathname === '/favicon.svg' ? 'favicon.svg' : decodeURIComponent(u.pathname.split('/').pop());
-        const path = new URL(`../public/${u.pathname === '/favicon.svg' ? 'favicon.svg' : `images/${name}`}`, import.meta.url);
+        const file = u.pathname.endsWith('.mp4') ? `../public/${name}` : (u.pathname === '/favicon.svg' ? 'favicon.svg' : `images/${name}`);
+        const path = new URL(`../public/${file}`, import.meta.url);
         let buf;
         try { buf = readFileSync(path); } catch { buf = null; }
         if (buf) {
           if (res.writableEnded) return;
           const ext = name.split('.').pop().toLowerCase();
-          const type = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', svg: 'image/svg+xml' }[ext] || 'application/octet-stream';
+          const type = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', svg: 'image/svg+xml', mp4: 'video/mp4' }[ext] || 'application/octet-stream';
           res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'public, max-age=3600', 'Access-Control-Allow-Origin': '*' });
-          res.end(buf);
+          if (req.method === 'HEAD') { res.end(); } else { res.end(buf); }
         } else { result = { code: 404, body: { error: 'not found' } }; }
       } else if (req.method === 'GET' && (u.pathname === '/' || u.pathname === '/app')) {
         // Landing (/product split: '/ → marketing landing, '/app' → the product

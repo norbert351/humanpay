@@ -9,3 +9,9 @@ node_modules/
 .self/
 self-agent-qr.png
 social/ui/
+demo/*.mp4
+demo/*.wav
+demo/*.mp3
+demo/concat.txt
+demo/frames/
+demo/timeline.json

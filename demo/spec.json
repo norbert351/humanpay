@@ -1,0 +1,22 @@
+{
+  "window": 83,
+  "voice": "en-US-ChristopherNeural",
+  "rate": "+16%",
+  "lines": [
+    [7.0, "Agents getting robbed is the story of 2026. One prompt injection drained a hundred and fifty thousand dollars. HumanPay fixes that."],
+    [13.0, "The anti-drain layer is the product. Proof of personhood, one-time limits, and a peer allowlist work together."],
+    [20.6, "Sign in with email, Google, or your own wallet. Self custody, always."],
+    [24.5, "Every rail reports honestly. Settlement is live on Celo mainnet. Proof of human is clearly labelled."],
+    [28.5, "Real USA Tether moves peer to peer, and the server never holds your keys."],
+    [34.0, "Set your boundaries once. Per transaction, per day, lifetime. Integers, no drift."],
+    [39.0, "A drain attempt gets blocked, and the block itself is recorded."],
+    [41.0, "Every allow and every block lands on a tamper evident hash chain, recomputable by anyone."],
+    [46.5, "Your own pay link and QR. A channel you own."],
+    [51.5, "Split a bill with friends. Remainder safe integer shares."],
+    [56.0, "Recurring subscriptions auto run inside your limits."],
+    [61.0, "Quote a corridor. Nigeria, Brazil, Argentina."],
+    [66.5, "Independence is checked on chain, the sixty day rule made visible."],
+    [72.8, "Tagged settlements carry the assigned code. Live and inspectable."],
+    [79.8, "HumanPay. An agent you can trust with money. Live now."]
+  ]
+}
