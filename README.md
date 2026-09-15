@@ -47,11 +47,21 @@ src/
   receipts.js     AuditStore — hash-chained allow/block ledger
   attribution.js  ERC-8021 toDataSuffix/taggedCall wrapper
   railcheck.js    honest live rail-readiness: funding (CELO/USAT), settlement, Self (/rails, /rail)
-  api.js          HTTP surface: /health /rails /limits /pay /block /receipts /receipts/:id /proof
+  api.js          HTTP surface: /health /rails /limits /pay /block /receipts /receipts/:id /proof + auth + tools
+  book.js         HumanPayBook — bills, subscriptions (auto-run scheduler), escrow, invoices, webhooks, API keys, insights
+  bookStore.js    PersistentBook — the same book on node:sqlite (AUDIT_DB_PATH), fail-safe degrade
+  authn.js        AuthService — scrypt email/password + HMAC sessions + OAuth2 (PKCE S256)
+  google.js       Google Sign-In — verify ID tokens against Google's public JWKS (no client secret)
+  notify.js       TelegramNotifier — push receipts to both parties on every settlement
+  paylinks.js     pay-me links + QR (the owned distribution channel)
+  independence.js the hackathon's independent-party rule, checked on-chain
+  fx.js           FX corridors — USAT ↔ cNGN/wBRL/wARS quotes (live vs labelled estimate)
+  ratelimit.js    token-bucket abuse guard on public/mutating routes
+  scheduler       server.runDueSubscriptions() — auto-charges due subs every SUB_SCHED_MS (default 60s)
   runtime.js      single-source live wiring: resolveSettlement/resolveSelfGate/buildRuntime + startBotPoller
   server.js       combined durable production entry: HTTP API + Telegram bot in ONE process (Render)
   constants.js    chain 42220, tag, agent wallet, verified USAT address + EIP-3009 domain
-test/             31 hermetic tests (node --test) proving allow/block/attribution/tamper/rail + P2P flows
+test/             116 hermetic tests (node --test) proving allow/block/attribution/tamper/rail, P2P flows, features, auth, scheduler, persistence
 ```
 
 The settlement rail is a seam: default `SimulatedSettlement` (no mainnet gas, hermetic tests) swaps to the real `X402FacilitatorSettlement` once `X402_API_KEY`/`X402_EXECUTOR_PK`/`X402_USAT` are set. The Self gate is a seam: `MockSelfGate` for demo, `SelfRegistryGate` once `SELF_AGENT_ID` is set. `GET /rails` / the `/rail` Telegram command report this live so the demo never misrepresents what is real vs simulated.
@@ -60,7 +70,7 @@ The settlement rail is a seam: default `SimulatedSettlement` (no mainnet gas, he
 
 ```bash
 npm install
-npm test                          # 35 hermetic tests
+npm test                          # 116 hermetic tests
 OPERATOR_ADDRESS=<0x…> npm start  # HTTP API (:8080)
 OP_OPERATOR_PK=<0x…> npm run bot  # Telegram bot (transcript mode w/o token; live polling with TELEGRAM_BOT_TOKEN)
 OP_OPERATOR_PK=<0x…> npm run serve  # combined: HTTP API + Telegram bot in ONE process (Render / durable PaaS)
@@ -118,7 +128,7 @@ Every money-moving route below routes through the **same** `_settle()` spine: hu
 | `GET /pay/@handle` · `GET /pay/@handle.png` · `GET /api/payqr` | **Owned pay links + QR** — a shareable/scannable channel to pay any registered peer |
 | `GET /paylinks` | Enumerate every peer's pay link (the distribution surface) |
 | `POST /bills`, `GET /bills(/:id)`, `POST /bills/:id/shares/:idx/pay` | **Split-a-bill** — remainder-safe integer shares, per-share settlement |
-| `POST /subscriptions`, `GET /subscriptions(/:id)`, `POST …/charge`, `POST …/cancel` | **Recurring bounded pay** — interval-capped, policy-gated charges |
+| `POST /subscriptions`, `GET /subscriptions(/:id)`, `POST …/charge`, `POST …/cancel`, `POST /subscriptions/run-due` | **Recurring bounded pay** — interval-capped, policy-gated charges; **auto-runs** every `SUB_SCHED_MS` (default 60s) through the same spine |
 | `POST /escrow`, `GET /escrow(/:id)`, `POST …/release`, `POST …/refund` | **Escrow** — hold → release/refund, one-way state machine |
 | `POST /invoices`, `GET /invoices(/:id)`, `POST …/pay` | **Payment requests / invoicing** |
 | `GET/POST/DELETE /webhooks` | **Webhooks** — HMAC-signed `payment.settled` delivery |
@@ -128,20 +138,25 @@ Every money-moving route below routes through the **same** `_settle()` spine: hu
 | `GET /fx` · `GET /fx/quote` · `POST /fx/swap` | **FX corridors** — USAT ↔ cNGN/wBRL/wARS (live when `TEXTILE_FX_URL` set, else a labeled estimate) |
 | `GET /receipts.csv` | **CSV export** of the tamper-evident ledger |
 | Rate limiting | token-bucket per IP on public/mutating routes → `429 + Retry-After` |
+| `GET /resources` | **On-ramp / funding guidance** — Kolibrì, MiniPay, CEX, faucet (the empty-wallet onboarding blocker) |
+| `GET /inbox` | **Notification inbox** — receipts + webhook events + push receipts + subscriptions |
+| `GET /auth/*` | **Sign-in** — email/password (scrypt), Google (client-side GIS, no secret), sessions |
+| `GET /notifications` | Push-receipt audit trail |
+| `POST /subscriptions/run-due` | Manual trigger of the auto-run recurring scheduler |
 
-UI: `public/pay.html` (QR pay page + MiniPay deep-link) and the `/app` **Tools** panels (pay link, split bill, FX quote, insights, independence, CSV export). Connecting a wallet registers it as a peer so its pay link resolves.
+UI: `public/pay.html` (QR pay page + MiniPay deep-link) and the `/app` **Tools** panels (pay link, split bill, FX quote, insights, independence, subscriptions, webhooks, funding, CSV export). Connecting a wallet registers it as a peer so its pay link resolves.
 
-**Honest caveat:** the `HumanPayBook` (bills / subscriptions / escrow / invoices / webhooks / API keys) is in-memory, like the receipt store before persistence — it resets on a cold start. Wiring it to the same `AUDIT_DB_PATH` SQLite store is the next durability step (receipts and the two on-chain rails are already durable/real).
+**Persistence:** receipts AND the book (bills/subs/escrow/invoices/webhooks/API keys) both persist to the same `AUDIT_DB_PATH` SQLite volume (`PersistentAuditStore` + `PersistentBook`), each with a fail-safe in-memory degrade when the path is unwritable. On Render free tier without a mounted disk the volume resets on cold-start — attach a Persistent Disk at `/var/data` for durable storage.
 
 ### Social (OAuth) sign-in
 
 **Google sign-in is client-side (Google Identity Services) — no client secret needed.** The browser renders the official Google button; Google returns an ID token; the server verifies it against Google's **public** JWKS (`/auth/google`, `src/google.js`) and issues a session. Only `GOOGLE_CLIENT_ID` is required (committed in `render.yaml`). In Google Cloud Console, register `https://humanpay.onrender.com` as an Authorized JavaScript origin (and `/app` as a redirect origin if you use the redirect mode). Legacy OAuth-2.0-code login (`GOOGLE_CLIENT_SECRET`) also works when the secret is present, for a confidential client — but the primary path needs only the public client id.
 
-## Status & honest limits (2026-09-12 — REAL settlement verified)
+## Status & honest limits (2026-09-15 — REAL settlement verified)
 
-- **Persistent receipt ledger:** set `AUDIT_DB_PATH` and `AuditStore` swaps to `PersistentAuditStore` (node:sqlite, zero new deps) — receipts survive restarts/redeploys, keeping the exact hash-chain integrity (verified by a tamper-detection test that edits the DB directly). Without it, the store is the original in-memory `AuditStore`.
+- **Persistent receipt + book ledger:** set `AUDIT_DB_PATH` and `AuditStore` swaps to `PersistentAuditStore` AND `HumanPayBook` swaps to `PersistentBook` (both node:sqlite, zero new deps) — receipts AND business objects survive restarts/redeploys, keeping the exact hash-chain integrity (verified by a tamper-detection test that edits the DB directly). Fail-safe: an unwritable path degrades to in-memory with a loud warning instead of failing boot.
 
-- **Implemented + tested:** **82 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`, which now seeds **verified on-chain evidence** that survives redeploys), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement + `/tip/sign`**, SelfRegistry gate, rail-readiness, **persistent store**. 78 existing + 4 new (persist reload, persist tamper, `/tip/sign` signature-shape + settle).
+- **Implemented + tested:** **116 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`, which now seeds **verified on-chain evidence** that survives redeploys), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement + `/tip/sign`**, SelfRegistry gate, rail-readiness, **persistent store + book**, **auth (scrypt + Google GIS with JWKS verification)**, **telegram push receipts**, **subscription scheduler** (auto-runs due subs through the same spine), split bills, escrow, invoices, webhooks (+test ping), API keys, insights, FX, independence proof, rate limiting, CSV export, MiniPay detect.
 - **✅ REAL VALUE MOVED ON CELO MAINNET** (the thing this hackathon scores):
   | Tx | What | Rail |
   |---|---|---|
