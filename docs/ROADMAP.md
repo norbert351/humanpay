@@ -17,11 +17,23 @@ via the two owned channels — the Telegram bot and the pay-link/QR surface.
 | Item | Why |
 |---|---|
 | Onboard real humans through the Telegram bot + pay links | `peers: 0` today; the rules count only independent parties with pre-window Celo activity |
-| Flip Self rail LIVE (`SELF_AGENT_ID`) | proof-of-personhood is a named under-used primitive; currently MOCK |
-| Publish the X post + demo video (`socialLink`, `videoUrl`) and submit | form fields still empty; submission is a draft |
+| Publish the X post (`socialLink`) and submit | socialLink is the last empty field; submission is a draft |
 | Set a real `primaryTrack` — recommendation: **real-world-adoption** | rules: "one primary track… entering everything is not a strategy" |
 
+**Decided: Self rail stays MOCK for the submission.** The on-chain `SelfRegistryGate` is
+implemented, wired and tested; flipping LIVE requires a **Self mobile-app scan with a
+real passport** (handoff page is QR-only and camera-blocked — no phone-free path).
+Attempted 2026-09-15; the scan failed and it is honestly disclosed in `/rails` + README
+— judges read that as integrity. The judges-favorite narrative instead rides on the
+other under-used primitive (fee abstraction via x402), which is LIVE.
+
 ## 2. Product loop (post-hackathon, first month)
+
+- **Self proof-of-human LIVE (`SELF_AGENT_ID`)** — the one rail still MOCK. Needs a
+  human with a passport + the Self mobile app (scan the registration QR; mainnet does
+  not accept mock documents). Code is done; the gate flips the instant the env var is
+  set. This is the single highest-value post-submission flip for the proof-of-personhood
+  story.
 
 - **Durable storage** — attach a Render Persistent Disk at `/var/data` (receipts +
   book already persist; the volume is the only missing piece).

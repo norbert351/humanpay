@@ -78,7 +78,7 @@ owned Telegram channel + USAT-native stablecoin (both halves of
 | Repo public + resolving | api.github.com: visibility public | ✅ VERIFIED |
 | Tests green | `node --test` = 116 pass | ✅ VERIFIED |
 | Keep-alive during judging window | cron `humanpay-keepalive` enabled, last run ok | ✅ VERIFIED |
-| Self proof-of-human | `/rails`: MockSelfGate | ⚠️ UNVERIFIED (MOCK — needs SELF_AGENT_ID) |
+| Self proof-of-human | `/rails`: MockSelfGate — **decision: stays MOCK for submission** (needs Self app + real passport; scan attempted 2026-09-15, failed; disclosed honestly; moved to roadmap) | ⚠️ DISCLOSED-MOCK |
 | Real users / independent parties | `/health`: peers 0 | ⚠️ UNVERIFIED (is the open gap) |
 | Google sign-in | `/auth/providers` google configured | ✅ LIVE |
 | Subscription scheduler | 116 tests + `/subscriptions/run-due` | ✅ VERIFIED (code+tests; no live subs yet) |
