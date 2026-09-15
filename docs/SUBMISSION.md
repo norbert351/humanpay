@@ -43,8 +43,8 @@ live submission API on 2026-09-15.
 - **`celoNetwork`** — `celo-mainnet`
 - **`otherWallets`** — 0x3360DA7D976D7ED5Fe79Ee8022f539fb9af8f7C2 (executor)
 - **`ownContracts`** — none deployed this build (all settlement via USAT/x402)
-- **`socialLink`** — 🔴 **EMPTY — must post the X thread** (draft: `docs/x-post-draft.md`; post from @zubby_crypt tagging @CeloDevs + @Celo, then paste the URL)
-- **`videoUrl`** — 🔴 **EMPTY — record a short live demo** (≤20 MB mp4; landing + /app rails + one tagged settlement + /proof; host anywhere, paste the URL)
+- **`socialLink`** — 🔴 **EMPTY — final draft at `docs/x-post-draft.md`** (includes demo-video link; post from @zubby_crypt tagging @CeloDevs + @Celo, then paste the URL here)
+- **`videoUrl`** — ✅ **SET 2026-09-15** → `https://humanpay.onrender.com/humanpay-demo.mp4` (89s live take, 1.8MB 720p, GET+HEAD verified `200 video/mp4`)
 
 ## Judgment notes for the short description / X post
 

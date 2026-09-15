@@ -27,6 +27,7 @@ Fee abstraction: the facilitator pays the gas. Gas in the stablecoin.
 Live + inspectable (every claim curl-able):
 🔗 humanpay.onrender.com/attribution
 🤖 t.me/tokenscanner2_bot
+🎬 Demo: humanpay.onrender.com/humanpay-demo.mp4
 
 Agent ID 9836 · EIP-155:42220
 
