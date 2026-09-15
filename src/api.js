@@ -398,6 +398,32 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
           const acct = await auth.oauthExchange({ provider: b.provider, code: b.code, redirectUri: b.redirect_uri, state: b.state, codeVerifier: b.code_verifier });
           result = { code: 200, body: { ...acct, token: auth.issueSession({ id: acct.id, email: acct.email }) } };
         } catch (e) { result = { code: 502, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/auth/oauth/callback') {
+        // navigational fallback (rare) — reports it needs the POST form.
+        result = { code: 400, body: { error: 'use POST /auth/oauth/callback with {provider,code,redirect_uri}' } };
+      } else if (req.method === 'GET' && u.pathname === '/auth/oauth/google-client-id') {
+        // The GIS client needs the (public) client id to render the button.
+        const cid = process.env.GOOGLE_CLIENT_ID;
+        if (!cid) result = { code: 503, body: { error: 'GOOGLE_CLIENT_ID not configured' } };
+        else result = { code: 200, body: { clientId: cid } };
+      } else if (req.method === 'POST' && u.pathname === '/auth/google') {
+        // Google Sign-In: client sends an ID token; we verify its signature
+        // against Google's PUBLIC keys (no client secret required).
+        const b = await readBody();
+        const clientId = process.env.GOOGLE_CLIENT_ID;
+        if (!clientId) result = { code: 503, body: { error: 'GOOGLE_CLIENT_ID not configured' } };
+        else if (!b.id_token) result = { code: 400, body: { error: 'id_token required' } };
+        else {
+          try {
+            const { verifyGoogleIdToken } = await import('./google.js');
+            const claims = await verifyGoogleIdToken({ token: b.id_token, clientId, fetchImpl });
+            if (!claims.email_verified) result = { code: 403, body: { error: 'GOOGLE_EMAIL_NOT_VERIFIED' } };
+            else {
+              const acct = auth.upsertOAuth({ provider: 'google', id: claims.sub, email: claims.email, name: claims.name });
+              result = { code: 200, body: { ...acct, token: auth.issueSession(acct) } };
+            }
+          } catch (e) { result = { code: 403, body: { error: e.message } }; }
+        }
       } else if (req.method === 'GET' && u.pathname === '/notifications') {
         // Inspect the push-receipt audit trail (who was told about which settlement).
         result = { code: 200, body: { enabled: notifier.enabled, sent: notifier.sent.slice(-50), count: notifier.sent.length } };

@@ -135,7 +135,7 @@ UI: `public/pay.html` (QR pay page + MiniPay deep-link) and the `/app` **Tools**
 
 ### Social (OAuth) sign-in
 
-`GOOGLE_CLIENT_ID` is committed in `render.yaml` (it's public — it ships in the browser redirect). To complete the Google token exchange you must also set **`GOOGLE_CLIENT_SECRET`** in the Render dashboard (it never belongs in the repo), and register `https://humanpay.onrender.com/app` as an **Authorized JavaScript/Redirect URI** in the Google Cloud Console. The flow is PKCE (S256) so a public/installed client can work without a secret if you prefer that client type. `/auth/providers` reports `configured` vs `secretConfigured` honestly.
+**Google sign-in is client-side (Google Identity Services) — no client secret needed.** The browser renders the official Google button; Google returns an ID token; the server verifies it against Google's **public** JWKS (`/auth/google`, `src/google.js`) and issues a session. Only `GOOGLE_CLIENT_ID` is required (committed in `render.yaml`). In Google Cloud Console, register `https://humanpay.onrender.com` as an Authorized JavaScript origin (and `/app` as a redirect origin if you use the redirect mode). Legacy OAuth-2.0-code login (`GOOGLE_CLIENT_SECRET`) also works when the secret is present, for a confidential client — but the primary path needs only the public client id.
 
 ## Status & honest limits (2026-09-12 — REAL settlement verified)
 

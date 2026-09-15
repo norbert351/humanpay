@@ -95,6 +95,21 @@ export class AuthService {
     return { id: a.id, email: a.email };
   }
 
+  // ---- Google Sign-In (client-side ID token, no secret) ----------------
+  /**
+   * Accept a Google ID token verified by `verifyGoogleIdToken`. Upserts the
+   * account keyed by their Google sub/email — no password, no client secret.
+   */
+  upsertOAuth({ provider, id, email, name }) {
+    const e = String(email || `${provider}_${id}@noemail.local`).toLowerCase();
+    let a = this.accounts.get(e);
+    if (!a) {
+      a = { id: 'acct_' + randomUUID().slice(0, 8), email: e, passwordHash: null, provider, createdAt: this.now(), name: name || null };
+      this.accounts.set(e, a); this.byId.set(a.id, a); this._persist(a);
+    } else if (!a.name && name) { a.name = name; this._persist(a); }
+    return { id: a.id, email: a.email, provider, name: a.name };
+  }
+
   // ---- OAuth 2.0 (social) ---------------------------------------------
   providerConfig(name) {
     const p = OAUTH_PROVIDERS[name];

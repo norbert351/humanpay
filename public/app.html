@@ -149,7 +149,7 @@ label{font-family:'JetBrains Mono';font-size:.72rem;letter-spacing:.06em;text-tr
 
     <div class="auth-sect">Or with a wallet / social</div>
     <button class="auth-opt" id="btnMeta"><span class="ico">🦊</span> MetaMask / injected wallet</button>
-    <div id="oauthButtons"></div>
+    <div id="googleButton" class="auth-row"></div>
     <button class="auth-opt auth-opt-ghost" id="btnReadonly"><span class="ico">👁️</span> Explore read-only (no wallet)</button>
     <div class="auth-note" id="authNote">Connecting proves who holds the keys. No keys ever leave your device.</div>
   </div>
@@ -275,6 +275,7 @@ label{font-family:'JetBrains Mono';font-size:.72rem;letter-spacing:.06em;text-tr
   </div>
 </main>
 
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <script>
 const $ = (id) => document.getElementById(id);
 let connected = false, address = null, rail = null, attr = null, peerHandle = null;
@@ -334,22 +335,38 @@ $('btnRegister').addEventListener('click', async ()=>{
   setSession(data.token); hideVeil(); setAuthErr('');
   if(typeof afterAuth==='function') afterAuth(data);
 });
-async function loadOAuth(){
-  try{
-    const d = await (await fetch(location.origin+'/auth/providers')).json();
-    const el=$('oauthButtons'); if(!el||!d.oauth) return;
-    el.innerHTML = d.oauth.map((p)=>{
-      const names={google:'Google',github:'GitHub'};
-      const cfg=p.configured;
-      const label=cfg ? 'Continue with '+names[p.name] : names[p.name]+' · not configured';
-      return '<button class="auth-opt auth-prov" data-provider="'+p.name+'" data-configured="'+cfg+'"><span class="ico">'+(p.name==='google'?'G':'🐙')+'</span> '+label+(cfg?'':'<span class="badge">off</span>')+'</button>';
-    }).join('');
-    el.querySelectorAll('.auth-prov').forEach((btn)=>{
-      btn.addEventListener('click', ()=> startOAuth(btn.dataset.provider));
+async function loadGoogle(){
+  const el = $('googleButton');
+  if(!el) return;
+  // GIS needs the client id server-side; we ask the API what the client id is.
+  let clientId = null;
+  try {
+    const prov = await (await fetch(location.origin+'/auth/providers')).json();
+    const g = (prov.oauth||[]).find((p)=>p.name==='google');
+    clientId = g && g.configured ? (await (await fetch(location.origin+'/auth/oauth/google-client-id')).json()).clientId || null : null;
+  } catch(e){}
+  if(!clientId){ el.innerHTML = '<div class="mono" style="color:var(--ink-faint);font-size:.72rem">Google sign-in available once GOOGLE_CLIENT_ID is set on the server</div>'; return; }
+  const render = ()=>{
+    if(typeof google === 'undefined' || !google.accounts) return setTimeout(render, 300);
+    google.accounts.id.initialize({
+      client_id: clientId,
+      callback: async (resp) => {
+        if(!resp || !resp.credential){ setAuthErr('Google sign-in returned no credential.'); return; }
+        try{
+          const r = await fetch(location.origin+'/auth/google', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ id_token: resp.credential }) });
+          const d = await r.json();
+          if(!r.ok){ setAuthErr(d.error || 'Google sign-in failed'); return; }
+          setSession(d.token); hideVeil(); setAuthErr('');
+          afterAuth(d);
+        }catch(e){ setAuthErr('Google sign-in error: '+((e&&e.message)||e)); }
+      },
+      auto_select: false,
     });
-  }catch(e){}
+    google.accounts.id.renderButton(el, { theme:'filled_black', size:'large', shape:'pill', width:el.clientWidth||360, text:'continue_with' });
+  };
+  render();
 }
-
+loadGoogle();
 /* ---- PKCE helpers (browser) ---- */
 function b64url(buf){ return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
 function randVerifier(){ const a=new Uint8Array(32); crypto.getRandomValues(a); return b64url(a); }

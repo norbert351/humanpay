@@ -41,11 +41,12 @@ services:
         sync: false
       # --- social (OAuth) sign-in ---
       # GOOGLE_CLIENT_ID is PUBLIC (it ships in the browser redirect URL) so it's
-      # safe to commit here. GOOGLE_CLIENT_SECRET must stay in the Render dashboard.
+      # safe to commit here. The primary Google path is CLIENT-SIDE (GIS) and
+      # verifies against Google's public JWKS — it needs ONLY this id, not a secret.
       - key: GOOGLE_CLIENT_ID
         value: 517988614557-lnfoegae15ksauft2nvgfgok5d36gshs.apps.googleusercontent.com
       - key: GOOGLE_CLIENT_SECRET
-        sync: false                      # set in Dashboard -> Environment (REQUIRED for the token exchange)
+        sync: false                      # OPTIONAL — only needed for the legacy confidential OAuth code flow
       - key: GITHUB_CLIENT_ID
         sync: false
       - key: GITHUB_CLIENT_SECRET
