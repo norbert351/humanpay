@@ -101,13 +101,20 @@ export class AuthService {
     if (!p) throw new Error('unknown provider');
     const clientId = process.env[p.idEnv];
     const clientSecret = process.env[p.secretEnv];
-    return { ...p, name, clientId, clientSecret, configured: Boolean(clientId && clientSecret) };
+    // The AUTHORIZE step needs only the (public) client id — so the button can go
+    // live as soon as it's set. The EXCHANGE step additionally needs the secret
+    // for a confidential web client; both are reported so the UI never lies.
+    return { ...p, name, clientId, clientSecret, secretConfigured: Boolean(clientSecret), configured: Boolean(clientId) };
   }
 
-  /** Build the provider authorize URL (state is an HMAC — no server session needed). */
-  oauthAuthorizeUrl({ provider, redirectUri }) {
+  /**
+   * Build the provider authorize URL. Supports PKCE (S256): pass `codeChallenge`
+   * from the client so a public/installed client can complete without a secret.
+   * `state` is an HMAC — verified on the callback, no server session needed.
+   */
+  oauthAuthorizeUrl({ provider, redirectUri, codeChallenge, codeChallengeMethod = 'S256' }) {
     const cfg = this.providerConfig(provider);
-    if (!cfg.configured) return { configured: false, provider, envNeeded: [cfg.idEnv, cfg.secretEnv] };
+    if (!cfg.configured) return { configured: false, provider, envNeeded: [cfg.idEnv] };
     const state = this.sign({ p: provider, r: redirectUri, n: randomBytes(8).toString('hex'), t: this.now() });
     const url = new URL(cfg.authorizeUrl);
     url.searchParams.set('client_id', cfg.clientId);
@@ -115,19 +122,25 @@ export class AuthService {
     url.searchParams.set('response_type', 'code');
     url.searchParams.set('scope', cfg.scope);
     url.searchParams.set('state', state);
-    return { configured: true, provider, url: url.toString(), state };
+    if (codeChallenge) {
+      url.searchParams.set('code_challenge', codeChallenge);
+      url.searchParams.set('code_challenge_method', codeChallengeMethod);
+    }
+    return { configured: true, provider, url: url.toString(), state, secretConfigured: cfg.secretConfigured, pkce: Boolean(codeChallenge) };
   }
 
   /** Exchange the auth code for a profile and upsert the account. */
-  async oauthExchange({ provider, code, redirectUri, state }) {
+  async oauthExchange({ provider, code, redirectUri, state, codeVerifier }) {
     const cfg = this.providerConfig(provider);
     if (!cfg.configured) throw new Error(`${provider} OAuth not configured`);
     if (state) { const d = this.verify(state); if (!d || d.p !== provider) throw new Error('bad oauth state'); }
-    const body = new URLSearchParams({ client_id: cfg.clientId, client_secret: cfg.clientSecret, code, grant_type: 'authorization_code', redirect_uri: redirectUri });
+    const body = new URLSearchParams({ client_id: cfg.clientId, code, grant_type: 'authorization_code', redirect_uri: redirectUri });
+    if (cfg.clientSecret) body.set('client_secret', cfg.clientSecret);
+    if (codeVerifier) body.set('code_verifier', codeVerifier);
     const tr = await this.fetchImpl(cfg.tokenUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', Accept: 'application/json' }, body });
     const tj = await tr.json().catch(() => ({}));
     const accessToken = tj.access_token;
-    if (!accessToken) throw new Error('oauth token exchange failed');
+    if (!accessToken) throw new Error(`oauth token exchange failed: ${tj.error || tj.error_description || tr.status}`);
     const ur = await this.fetchImpl(cfg.userInfoUrl, { headers: { Authorization: `Bearer ${accessToken}`, Accept: 'application/json', 'User-Agent': 'HumanPay' } });
     const uj = await ur.json();
     const prof = cfg.parse(uj);

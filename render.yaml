@@ -39,3 +39,20 @@ services:
       # --- real Self proof-of-human rail (optional; MOCK without) ---
       - key: SELF_AGENT_ID
         sync: false
+      # --- social (OAuth) sign-in ---
+      # GOOGLE_CLIENT_ID is PUBLIC (it ships in the browser redirect URL) so it's
+      # safe to commit here. GOOGLE_CLIENT_SECRET must stay in the Render dashboard.
+      - key: GOOGLE_CLIENT_ID
+        value: 517988614557-lnfoegae15ksauft2nvgfgok5d36gshs.apps.googleusercontent.com
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false                      # set in Dashboard -> Environment (REQUIRED for the token exchange)
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      # --- FX corridors (optional; labelled estimate without) ---
+      - key: TEXTILE_FX_URL
+        sync: false
+      # --- auth sessions ---
+      - key: AUTH_SECRET
+        sync: false

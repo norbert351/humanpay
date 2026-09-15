@@ -133,6 +133,10 @@ UI: `public/pay.html` (QR pay page + MiniPay deep-link) and the `/app` **Tools**
 
 **Honest caveat:** the `HumanPayBook` (bills / subscriptions / escrow / invoices / webhooks / API keys) is in-memory, like the receipt store before persistence — it resets on a cold start. Wiring it to the same `AUDIT_DB_PATH` SQLite store is the next durability step (receipts and the two on-chain rails are already durable/real).
 
+### Social (OAuth) sign-in
+
+`GOOGLE_CLIENT_ID` is committed in `render.yaml` (it's public — it ships in the browser redirect). To complete the Google token exchange you must also set **`GOOGLE_CLIENT_SECRET`** in the Render dashboard (it never belongs in the repo), and register `https://humanpay.onrender.com/app` as an **Authorized JavaScript/Redirect URI** in the Google Cloud Console. The flow is PKCE (S256) so a public/installed client can work without a secret if you prefer that client type. `/auth/providers` reports `configured` vs `secretConfigured` honestly.
+
 ## Status & honest limits (2026-09-12 — REAL settlement verified)
 
 - **Persistent receipt ledger:** set `AUDIT_DB_PATH` and `AuditStore` swaps to `PersistentAuditStore` (node:sqlite, zero new deps) — receipts survive restarts/redeploys, keeping the exact hash-chain integrity (verified by a tamper-detection test that edits the DB directly). Without it, the store is the original in-memory `AuditStore`.

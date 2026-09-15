@@ -341,18 +341,52 @@ async function loadOAuth(){
     el.innerHTML = d.oauth.map((p)=>{
       const names={google:'Google',github:'GitHub'};
       const cfg=p.configured;
-      const label=cfg ? 'Continue with '+names[p.name] : names[p.name]+' · configure on server';
+      const label=cfg ? 'Continue with '+names[p.name] : names[p.name]+' · not configured';
       return '<button class="auth-opt auth-prov" data-provider="'+p.name+'" data-configured="'+cfg+'"><span class="ico">'+(p.name==='google'?'G':'🐙')+'</span> '+label+(cfg?'':'<span class="badge">off</span>')+'</button>';
     }).join('');
     el.querySelectorAll('.auth-prov').forEach((btn)=>{
-      btn.addEventListener('click', async ()=>{
-        const p=btn.dataset.provider;
-        const cb=location.origin+'/app?oauth='+p;
-        const a=await (await fetch(location.origin+'/auth/oauth/authorize?provider='+p+'&redirect_uri='+encodeURIComponent(cb))).json();
-        if(a.configured) location.href=a.url; else setAuthErr('Social login not configured — use email or wallet.');
-      });
+      btn.addEventListener('click', ()=> startOAuth(btn.dataset.provider));
     });
   }catch(e){}
+}
+
+/* ---- PKCE helpers (browser) ---- */
+function b64url(buf){ return btoa(String.fromCharCode.apply(null, new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,''); }
+function randVerifier(){ const a=new Uint8Array(32); crypto.getRandomValues(a); return b64url(a); }
+async function s256(verifier){ const d=await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)); return b64url(d); }
+
+async function startOAuth(provider){
+  const redirectUri = location.origin + '/app';
+  const verifier = randVerifier();
+  const challenge = await s256(verifier);
+  try { localStorage.setItem('hp_pkce_'+provider, verifier); localStorage.setItem('hp_pkce_redirect', redirectUri); } catch(e){}
+  const a = await (await fetch(location.origin+'/auth/oauth/authorize?provider='+provider+'&redirect_uri='+encodeURIComponent(redirectUri)+'&code_challenge='+challenge+'&code_challenge_method=S256')).json();
+  if(a.configured) location.href = a.url;
+  else setAuthErr(names_(provider)+' sign-in is not configured on the server yet.');
+}
+function names_(p){ return ({google:'Google',github:'GitHub'})[p] || p; }
+
+/* Finish the OAuth redirect (?code=…&state=…): exchange server-side with the verifier. */
+async function finishOAuth(){
+  const params = new URLSearchParams(location.search);
+  const code = params.get('code');
+  if(!code) return false;
+  const provider = params.get('provider') || (params.get('state') ? 'google' : null);
+  // Prefer the provider we stashed; fall back to any we recorded.
+  let p = provider;
+  if(!p){ for(const k of ['google','github']){ if(localStorage.getItem('hp_pkce_'+k)){ p=k; break; } } }
+  const verifier = (p && localStorage.getItem('hp_pkce_'+p)) || null;
+  const redirectUri = localStorage.getItem('hp_pkce_redirect') || (location.origin+'/app');
+  if(!p){ setAuthErr('Could not determine OAuth provider from the callback.'); return false; }
+  try{
+    const r = await fetch(location.origin+'/auth/oauth/callback', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ provider:p, code, redirect_uri:redirectUri, state: params.get('state'), code_verifier: verifier }) });
+    const d = await r.json();
+    if(!r.ok){ setAuthErr(d.error || 'sign-in failed'); return false; }
+    setSession(d.token);
+    try{ localStorage.removeItem('hp_pkce_'+p); localStorage.removeItem('hp_pkce_redirect'); }catch(e){}
+    history.replaceState(null,'',location.pathname);
+    afterAuth(d); return true;
+  }catch(e){ setAuthErr('sign-in error: '+((e&&e.message)||e)); return false; }
 }
 loadOAuth();
 $('btnConnect').addEventListener('click', ()=> connected ? null : showVeil());
@@ -525,17 +559,15 @@ function afterAuth(acct){
 }
 // Resume an existing email/social session (skip the veil if a token is stored).
 (async function resume(){
+  // 1. Returning from an OAuth provider? Exchange the code first.
+  try { if (await finishOAuth()) return; } catch(e){}
+  // 2. Existing session token?
   const tok=getSession();
   if(tok){
     try{
       const r=await fetch(location.origin+'/auth/me',{headers:{Authorization:'Bearer '+tok}});
       if(r.ok){ const me=await r.json(); afterAuth(me); return; }
     }catch(e){}
-  }
-  // OAuth callback: we may have been redirected back with ?oauth=...
-  const params=new URLSearchParams(location.search);
-  if(params.get('oauth')){
-    // (Full code exchange happens in a server-side flow; the veil stays for now.)
   }
   // Gate the product: show the sign-in veil on load (read-only is an explicit choice).
   if(!connected) setTimeout(()=>{ if(!connected) showVeil(); }, 350);

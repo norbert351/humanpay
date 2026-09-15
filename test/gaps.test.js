@@ -69,6 +69,43 @@ test('auth HTTP routes: /auth/providers lists oauth honestly, /auth/me honors Be
   } finally { await new Promise((r) => server.close(r)); }
 });
 
+test('auth: oauth authorize carries PKCE S256 params when a challenge is provided', () => {
+  process.env.GOOGLE_CLIENT_ID = '517988614557-test.apps.googleusercontent.com';
+  try {
+    const auth = new AuthService({ secret: 's' });
+    const a = auth.oauthAuthorizeUrl({ provider: 'google', redirectUri: 'http://localhost/app', codeChallenge: 'abcS256challenge' });
+    assert.equal(a.configured, true);
+    assert.equal(a.pkce, true);
+    assert.equal(a.secretConfigured, false);
+    const u = new URL(a.url);
+    assert.equal(u.searchParams.get('code_challenge'), 'abcS256challenge');
+    assert.equal(u.searchParams.get('code_challenge_method'), 'S256');
+    assert.ok(u.searchParams.get('state'));
+  } finally { delete process.env.GOOGLE_CLIENT_ID; }
+});
+
+test('auth: oauth exchange sends client_secret when present + code_verifier when given', async () => {
+  process.env.GOOGLE_CLIENT_ID = 'cid';
+  process.env.GOOGLE_CLIENT_SECRET = 'csecret';
+  try {
+    const seen = new URLSearchParams();
+    const auth = new AuthService({ secret: 's', fetchImpl: async (url, opt) => {
+      seen.append('url', url);
+      const body = new URLSearchParams(opt.body);
+      seen.append('body', body.toString());
+      if (url.includes('/token')) return { status: 200, json: async () => ({ access_token: 'tok', error: null }) };
+      return { status: 200, json: async () => ({ sub: 'g1', email: 'g@x.com', name: 'G' }) };
+    }});
+    const cfg = auth.providerConfig('google');
+    assert.equal(cfg.secretConfigured, true);
+    const acct = await auth.oauthExchange({ provider: 'google', code: 'c', redirectUri: 'http://localhost/app', state: null, codeVerifier: 'vr' });
+    assert.equal(acct.email, 'g@x.com');
+    const sent = seen.getAll('body').find((b) => b.includes('grant_type=authorization_code'));
+    assert.ok(sent.includes('client_secret=csecret'));
+    assert.ok(sent.includes('code_verifier=vr'));
+  } finally { delete process.env.GOOGLE_CLIENT_ID; delete process.env.GOOGLE_CLIENT_SECRET; }
+});
+
 test('auth: scrypt hash never stores the plaintext', () => {
   const h = hashPassword('s3cret-password');
   assert.ok(!h.includes('s3cret-password'));

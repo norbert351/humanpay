@@ -385,17 +385,17 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
       } else if (req.method === 'GET' && u.pathname === '/auth/providers') {
         // Report which social providers are configured (honest — like /rails).
         const names = Object.keys(OAUTH_PROVIDERS);
-        result = { code: 200, body: { emailPassword: true, oauth: names.map((n) => ({ name: n, configured: !!auth.providerConfig(n).configured })) } };
+        result = { code: 200, body: { emailPassword: true, oauth: names.map((n) => { const c = auth.providerConfig(n); return { name: n, configured: c.configured, secretConfigured: c.secretConfigured }; }) } };
       } else if (req.method === 'GET' && u.pathname === '/auth/oauth/authorize') {
         const q = u.searchParams;
         try {
-          const cfg = auth.oauthAuthorizeUrl({ provider: q.get('provider'), redirectUri: q.get('redirect_uri') });
-          result = cfg.configured ? { code: 200, body: cfg } : { code: 200, body: cfg };
+          const cfg = auth.oauthAuthorizeUrl({ provider: q.get('provider'), redirectUri: q.get('redirect_uri'), codeChallenge: q.get('code_challenge'), codeChallengeMethod: q.get('code_challenge_method') || 'S256' });
+          result = { code: 200, body: cfg };
         } catch (e) { result = { code: 400, body: { error: e.message } }; }
       } else if (req.method === 'POST' && u.pathname === '/auth/oauth/callback') {
         const b = await readBody();
         try {
-          const acct = await auth.oauthExchange({ provider: b.provider, code: b.code, redirectUri: b.redirect_uri, state: b.state });
+          const acct = await auth.oauthExchange({ provider: b.provider, code: b.code, redirectUri: b.redirect_uri, state: b.state, codeVerifier: b.code_verifier });
           result = { code: 200, body: { ...acct, token: auth.issueSession({ id: acct.id, email: acct.email }) } };
         } catch (e) { result = { code: 502, body: { error: e.message } }; }
       } else if (req.method === 'GET' && u.pathname === '/notifications') {
