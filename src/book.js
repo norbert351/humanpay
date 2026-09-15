@@ -173,6 +173,20 @@ export class HumanPayBook {
   listWebhooks() { return [...this.webhooks.values()].map((w) => ({ ...w, secret: w.secret.slice(0, 6) + '…' })); }
   deleteWebhook(wid) { return this.webhooks.delete(wid); }
 
+  /** Send a test ping to a webhook (used by the UI 'test' button). */
+  async testWebhook(wid, { fetchImpl = globalThis.fetch } = {}) {
+    const wh = this.webhooks.get(wid);
+    if (!wh) throw new Error('webhook not found');
+    const body = JSON.stringify({ event: 'test', at: Date.now(), data: { ok: true } });
+    const sig = 'sha256=' + createHmac('sha256', wh.secret).update(body).digest('hex');
+    wh.deliveries++;
+    try {
+      const r = await fetchImpl(wh.url, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-HumanPay-Signature': sig, 'X-HumanPay-Event': 'test' }, body });
+      wh.lastStatus = r && r.status;
+      return { ok: !!(r && r.ok), status: wh.lastStatus, id: wh.id, url: wh.url };
+    } catch (e) { wh.lastStatus = 'error'; return { ok: false, status: 'error', id: wh.id, url: wh.url, error: (e && e.message) || String(e) }; }
+  }
+
   /** Record + (optionally) deliver an event to matching webhooks. */
   async emit(event, payload, { fetchImpl = globalThis.fetch } = {}) {
     const rec = { event, payload, at: now(), matched: 0, ok: 0 };

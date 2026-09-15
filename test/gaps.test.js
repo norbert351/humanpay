@@ -5,7 +5,11 @@ import assert from 'node:assert/strict';
 import { AuthService, hashPassword, verifyPassword, OAUTH_PROVIDERS } from '../src/authn.js';
 import { TelegramNotifier, receiptText } from '../src/notify.js';
 import { PersistentBook } from '../src/bookStore.js';
+import { HumanPayBook, splitShares } from '../src/book.js';
 import { UserRegistry } from '../src/users.js';
+import { MockSelfGate } from '../src/selfGate.js';
+import { SimulatedSettlement } from '../src/settlement.js';
+import { AuditStore } from '../src/receipts.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -136,6 +140,38 @@ test('notify: notifies both parties when reachable, never throws when off', asyn
   const off = new TelegramNotifier({ token: null });
   const r = await off.notifyPayment({ amountMicro: '1', from: 'x', to: 'y' });
   assert.equal(r.attempted, 0);
+});
+
+test('scheduler: runDueSubscriptions auto-charges only due active subs through the spine', async () => {
+  const { createHumanPayApp } = await import('../src/api.js');
+  const A = '0x' + 'a1'.repeat(20), B = '0x' + 'b0'.repeat(20);
+  const registry = new UserRegistry();
+  registry.register({ chatId: '1', wallet: A, handle: 'a' });
+  registry.register({ chatId: '2', wallet: B, handle: 'b' });
+  const allow = [A, B];
+  for (const w of allow) registry.getByWallet(w).engine.registerLimit({ perTxMaxMicro: '5000000', dayCapMicro: '50000000', totalCapMicro: '500000000', allowlist: allow });
+  const book = new HumanPayBook();
+  const server = createHumanPayApp({ registry, book, selfGate: new MockSelfGate(), settlement: new SimulatedSettlement(), receipts: new AuditStore('s') });
+  const sub = book.createSubscription({ payer: A, payee: B, amountMicro: '100000', intervalSec: 60, label: 'netflix' });
+  sub.nextDueAt = Date.now() - 1000; // due now
+  const report = await server.runDueSubscriptions();
+  assert.equal(report.due, 1);
+  assert.equal(report.charged, 1);
+  assert.equal(book.getSubscription(sub.id).runs, 1);
+  // a by-hand nextDueAt advance makes it not-due next tick
+  const r2 = await server.runDueSubscriptions();
+  assert.equal(r2.due, 0);
+  server.close();
+});
+
+test('webhook test pings a URL + returns status (book level)', async () => {
+  const book = new HumanPayBook();
+  let seenBody = null;
+  const wh = book.createWebhook({ url: 'http://127.0.0.1:9/h', events: ['payment.settled'] });
+  const res = await book.testWebhook(wh.id, { fetchImpl: async (url, opt) => { seenBody = JSON.parse(opt.body); return { ok: true, status: 200, json: async () => ({}) }; } });
+  assert.equal(res.ok, true);
+  assert.equal(res.status, 200);
+  assert.equal(seenBody.event, 'test');
 });
 
 test('persistent book: survives reopen + tamper-resistant, fail-safe on bad path', () => {

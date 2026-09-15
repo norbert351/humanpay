@@ -97,7 +97,7 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
       }
     }
 
-  return createServer(async (req, res) => {
+  const server = createServer(async (req, res) => {
     const u = new URL(req.url, 'http://localhost');
     let result = { code: 404, body: { error: 'not found' } };
     try {
@@ -500,6 +500,10 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
             else { book.payBillShare(billId, idx, settled.settlement); const updated = book.getBill(billId); result = { code: 200, body: { bill: updated, receiptId: settled.receiptId, tagged: settled.tagged } }; }
           }
         } catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'POST' && u.pathname === '/subscriptions/run-due') {
+        // Manually trigger one scheduler tick (also used by the auto-timer).
+        if (typeof server.runDueSubscriptions !== 'function') result = { code: 500, body: { error: 'scheduler not available' } };
+        else result = { code: 200, body: await server.runDueSubscriptions() };
       } else if (req.method === 'GET' && u.pathname === '/subscriptions') {
         result = { code: 200, body: { subscriptions: book.listSubscriptions() } };
       } else if (req.method === 'POST' && u.pathname === '/subscriptions') {
@@ -574,6 +578,10 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
         const b = await readBody();
         try { const wh = book.createWebhook(b); result = { code: 201, body: wh }; }
         catch (e) { result = { code: 400, body: { error: e.message } }; }
+      } else if (req.method === 'POST' && u.pathname.endsWith('/test') && u.pathname.startsWith('/webhooks/')) {
+        // Ping-test a webhook URL from the UI.
+        try { result = { code: 200, body: await book.testWebhook(u.pathname.split('/')[2], { fetchImpl }) }; }
+        catch (e) { result = { code: 404, body: { error: e.message } }; }
       } else if (req.method === 'DELETE' && u.pathname.startsWith('/webhooks/')) {
         result = { code: 200, body: { deleted: book.deleteWebhook(u.pathname.split('/').pop()) } };
       } else if (req.method === 'POST' && u.pathname === '/apikeys') {
@@ -592,6 +600,29 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
           const sum = await independenceSummary({ counterparties: cps, ownWallets: own });
           result = { code: 200, body: sum };
         } catch (e) { result = { code: 502, body: { error: e.message } }; }
+      } else if (req.method === 'GET' && u.pathname === '/resources') {
+        // On-ramp / funding guidance for a brand-new (empty) wallet — the #1
+        // onboarding blocker. Honest: real Celo/USAT acquisition paths only.
+        result = { code: 200, body: {
+          getUsat: [
+            { id: 'kolibrì', name: 'Kolibrì', desc: 'Mobile purchase of USAT/cUSD on Celo with a card or mobile money (on/off-ramp).', url: 'https://app.kolibri.finance/' },
+            { id: 'minipay', name: 'MiniPay', desc: 'Opera MiniPay wallet — on-ramps Celo stablecoins; connects via your browser wallet here.', url: null, note: 'detected in-app when you open via MiniPay' },
+            { id: 'cex', name: 'CEX withdrawal', desc: 'Buy USDT on an exchange and swap to USAT on Celo (see FX corridor), or withdraw cUSD directly.', url: null },
+            { id: 'faucet', name: 'Faucet', desc: 'Celo faucet for test/native gas (CELO) — not for mainnet USAT value.', url: 'https://faucet.celo.org/' },
+          ],
+          need: 'You fund YOUR wallet with USAT; HumanPay never holds it. Limits are set on that wallet; settlement is self-custody.',
+          note: 'For mainnet real-value, USAT (Tether America USD) on Celo mainnet, chain 42220.',
+        } };
+      } else if (req.method === 'GET' && u.pathname === '/inbox') {
+        // Combined human-facing notification inbox: tamper-evident receipts +
+        // webhook events + subscription scheduler activity.
+        const subs = book.listSubscriptions().map((s) => ({ id: s.id, label: s.label, status: s.status, runs: s.runs, nextDueAt: s.nextDueAt, history: s.history.slice(-5) }));
+        result = { code: 200, body: {
+          receipts: receipts.all().slice(-30),
+          webhookEvents: book.events.slice(-20),
+          notifications: notifier.sent.slice(-20),
+          subscriptions: subs,
+        } };
       } else if (req.method === 'GET' && u.pathname === '/fx') {
         result = { code: 200, body: { corridors: CORRIDORS, note: 'quote at GET /fx/quote?corridor=NGN&usatMicro=100000050&direction=sell' } };
       } else if (req.method === 'GET' && u.pathname === '/fx/quote') {
@@ -628,6 +659,28 @@ export function createHumanPayApp({ engine, selfGate = new MockSelfGate(), settl
     }
     json(res, result);
   });
+
+  /**
+   * Auto-run scheduler: charge every ACTIVE subscription whose nextDueAt has
+   * passed, through the SAME _settle() spine (gate not bypassed — subs are
+   * self-custody, so the payer's own rails/caps still apply). Returns a report.
+   * Idempotent per tick by advancing nextDueAt only on a settled charge.
+   */
+  server.runDueSubscriptions = async ({ now = Date.now, limit = 50 } = {}) => {
+    const t = now();
+    const due = book.listSubscriptions().filter((s) => s.status === 'active' && s.nextDueAt <= t);
+    const report = { checked: book.listSubscriptions().length, due: due.length, charged: 0, skipped: [], errors: [] };
+    for (const s of due.slice(0, limit)) {
+      try {
+        const settled = await _settle({ from: s.payer, to: s.payee, amountMicro: s.amountMicro, opts: { title: s.label, signature: '0x' + '0'.repeat(130) } });
+        if (settled.error) report.skipped.push({ id: s.id, reason: settled.error });
+        else { book.chargeSubscription(s.id, settled.settlement); report.charged++; }
+      } catch (e) { report.errors.push({ id: s.id, reason: (e && e.message) || String(e) }); }
+    }
+    report.at = new Date(t).toISOString();
+    return report;
+  };
+  return server;
 }
 
 // Runnable: `npm start`

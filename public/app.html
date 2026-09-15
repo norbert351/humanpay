@@ -270,6 +270,40 @@ label{font-family:'JetBrains Mono';font-size:.72rem;letter-spacing:.06em;text-tr
           <div class="act"><button class="btn btn-ghost" id="btnIndep" style="color:#cfcfcf">Check counterparties</button></div>
           <div class="callout" id="indepOut"></div>
         </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t">Subscriptions</span><span class="hint">recurring · auto-run</span></div>
+          <div class="field-row">
+            <div><label>Payee (@handle)</label><input class="field" id="subPayee" placeholder="@peer" /></div>
+            <div><label>Amount (USAT)</label><input class="field" id="subAmt" placeholder="5" type="number" /></div>
+          </div>
+          <div class="field-row">
+            <div><label>Every (seconds)</label><input class="field" id="subIv" placeholder="3600" type="number" /></div>
+            <div><label>Label</label><input class="field" id="subLabel" placeholder="rent" /></div>
+          </div>
+          <div class="act">
+            <button class="btn btn-primary" id="btnSubCreate">Create sub</button>
+            <button class="btn btn-ghost" id="btnSubRun" style="color:#cfcfcf">Run due now</button>
+          </div>
+          <div class="callout" id="subOut"></div>
+          <div class="receipts" id="subsList"><div class="mono" style="color:var(--ink-faint)">connect to load</div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t">Webhooks</span><span class="hint">HMAC-signed</span></div>
+          <input class="field" id="whUrl" placeholder="https://your-app.com/hooks" />
+          <div class="act">
+            <button class="btn btn-ghost" id="btnWhAdd" style="color:#cfcfcf">Add webhook</button>
+            <button class="btn btn-ghost" id="btnWhTest" style="color:#cfcfcf">Test latest</button>
+          </div>
+          <div class="callout" id="whOut"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-h"><span class="t">Get USAT</span><span class="hint">fund your wallet</span></div>
+          <p class="sub" style="margin:0 0 8px">You fund your own wallet; HumanPay never holds funds.</p>
+          <div class="receipts" id="fundOut"><div class="mono" style="color:var(--ink-faint)">load…</div></div>
+        </div>
       </div>
     </div>
   </div>
@@ -405,7 +439,6 @@ async function finishOAuth(){
     afterAuth(d); return true;
   }catch(e){ setAuthErr('sign-in error: '+((e&&e.message)||e)); return false; }
 }
-loadOAuth();
 $('btnConnect').addEventListener('click', ()=> connected ? null : showVeil());
 
 /* ---- live data (recorder separate from renderer) ---- */
@@ -561,10 +594,77 @@ $('btnIndep').addEventListener('click', async ()=>{
   }catch(e){ out('indepOut','err','Error: '+((e&&e.message)||e)); }
 });
 
-setInterval(()=>{ if(connected) loadInsights(); }, 12000);
+/* ---- Subscriptions (recurring, auto-run) ---- */
+$('btnSubCreate').addEventListener('click', async ()=>{
+  const payee=val('subPayee'), amt=parseFloat(val('subAmt')), iv=parseInt(val('subIv'),10), label=val('subLabel');
+  if(!payee){ out('subOut','err','Payee @handle required.'); return; }
+  if(!amt||amt<=0){ out('subOut','err','Amount must be > 0.'); return; }
+  if(!iv||iv<60){ out('subOut','err','Interval must be ≥ 60s.'); return; }
+  try{
+    const payer = address || (peerHandle?peerHandle.replace(/^@/,''):null);
+    const r=await fetch(location.origin+'/subscriptions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({payer,payee,amountMicro:String(Math.round(amt*1e6)),intervalSec:iv,label})});
+    const d=await r.json();
+    if(!r.ok){ out('subOut','err',d.error||'could not create'); return; }
+    out('subOut','ok','Sub '+d.id+' active · '+amt+' USAT every '+iv+'s to '+payee+'. It auto-charges; run due-now to test.');
+    loadSubscriptions();
+  }catch(e){ out('subOut','err','Error: '+((e&&e.message)||e)); }
+});
+$('btnSubRun').addEventListener('click', async ()=>{
+  out('subOut','warn','Running due subscriptions…');
+  try{
+    const d=await (await fetch(location.origin+'/subscriptions/run-due',{method:'POST'})).json();
+    out('subOut', d.charged>0?'ok':'warn', 'Checked '+d.due+' due · charged '+d.charged+(d.skipped.length?' · '+d.skipped.length+' skipped (unfunded/no limit)':''));
+    loadSubscriptions();
+  }catch(e){ out('subOut','err','Error: '+((e&&e.message)||e)); }
+});
+async function loadSubscriptions(){
+  try{
+    const d=await (await fetch(location.origin+'/subscriptions')).json();
+    const n=$('subsList'); if(!n) return;
+    const subs=d.subscriptions||[];
+    n.innerHTML = subs.length===0 ? '<div class="mono" style="color:var(--ink-faint)">no subscriptions</div>' : subs.slice().reverse().slice(0,8).map((s)=>
+      '<div class="row"><span><span class="pill '+(s.status==='active'?'allow':'block')+'">'+s.status.slice(0,4).toUpperCase()+'</span> '+s.label+' · '+(Number(s.amountMicro)/1e6).toFixed(2)+' USAT/interval · '+s.runs+' run'+(s.runs===1?'':'s')+'</span>'+ (s.nextDueAt?('<span class="mono">due '+new Date(s.nextDueAt).toLocaleTimeString()+'</span>'):'</span>')+'</div>'
+    ).join('');
+  }catch(e){}
+}
+
+/* ---- Webhooks ---- */
+$('btnWhAdd').addEventListener('click', async ()=>{
+  const url=val('whUrl');
+  if(!/^https?:\/\//.test(url)){ out('whOut','err','Enter a valid http(s) URL.'); return; }
+  try{
+    const r=await fetch(location.origin+'/webhooks',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url,events:['payment.settled']})});
+    const d=await r.json();
+    out('whOut', r.ok?'ok':'err', r.ok ? ('Webhook added '+d.id+' · secret '+d.secret.slice(0,6)+'… (use X-HumanPay-Signature to verify)') : (d.error||'failed'));
+  }catch(e){ out('whOut','err','Error: '+((e&&e.message)||e)); }
+});
+$('btnWhTest').addEventListener('click', async ()=>{
+  try{
+    const list=await (await fetch(location.origin+'/webhooks')).json();
+    const whs=list.webhooks||[];
+    if(whs.length===0){ out('whOut','warn','No webhooks registered yet.'); return; }
+    const wid=whs[whs.length-1].id;
+    out('whOut','warn','Pinging '+whs[whs.length-1].url+'…');
+    const d=await (await fetch(location.origin+'/webhooks/'+wid+'/test',{method:'POST'})).json();
+    out('whOut', d.ok?'ok':'err', d.ok?('Delivered — HTTP '+d.status):('Failed — HTTP '+d.status+(d.error?(' · '+d.error):'')));
+  }catch(e){ out('whOut','err','Error: '+((e&&e.message)||e)); }
+});
+
+/* ---- Funding / on-ramp guidance ---- */
+async function loadFunding(){
+  try{
+    const d=await (await fetch(location.origin+'/resources')).json();
+    const n=$('fundOut'); if(!n) return;
+    n.innerHTML=(d.getUsat||[]).map((r)=>'<div class="row"><span><b>'+r.name+'</b><br><span style="color:var(--ink-faint);font-size:.72rem">'+r.desc+'</span>'+(r.url?' · <a href="'+r.url+'" target="_blank" style="color:var(--green-soft)">open</a>':'')+'</span></div>').join('')
+      + (d.note?'<div class="mono" style="color:var(--ink-faint);margin-top:8px;font-size:.7rem">'+d.note+'</div>':'');
+  }catch(e){}
+}
+setInterval(()=>{ if(connected){ loadSubscriptions(); } }, 15000);
 loadRails();
 seedPayLink();
 loadInsights();
+loadFunding();
+loadSubscriptions();
 
 /* ---- session resume + OAuth callback ---- */
 function afterAuth(acct){

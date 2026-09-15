@@ -25,6 +25,20 @@ server.listen(PORT, () => {
   console.log(`[humanpay] API on :${PORT} (tag ${ATTRIBUTION_TAG}, operator ${rt.operatorAddress}, settle=${rt.settlement.constructor.name}, self=${rt.selfGate.constructor.name})`);
 });
 
+// Auto-run recurring subscriptions: charge due active subs through the bounded
+// spine every SUB_SCHED_MS (default 60s). Honest degradation: a missing payer
+// limit or an unfunded rail SKIPS the charge (reported under /subscriptions),
+// never mints phantom credit. Timer is unref'd so it never blocks shutdown.
+const SUB_SCHED_MS = Number(process.env.SUB_SCHED_MS || 60_000);
+if (SUB_SCHED_MS > 0) {
+  const tick = async () => {
+    try { const r = await server.runDueSubscriptions(); if (r.charged) console.log(`[humanpay:sched] charged ${r.charged}/${r.due}`); }
+    catch (e) { console.log('[humanpay:sched] tick failed', (e && e.message) || e); }
+  };
+  tick();
+  setInterval(tick, SUB_SCHED_MS).unref();
+}
+
 if (process.env.TELEGRAM_BOT_TOKEN) {
   startBotPoller({ token: process.env.TELEGRAM_BOT_TOKEN, handler: rt.handler });
 } else {
