@@ -22,7 +22,7 @@ live submission API on 2026-09-15.
 | `tagline` | AI agents that move real USAT — bounded by human-set limits, provable on-chain. |
 | `githubUrl` | https://github.com/norbert351/humanpay (public) |
 | `telegram` | zubby_crypt1 |
-| `primaryTrack` | **value-moved** ⚠️ (recommend flipping to `real-world-adoption`; see below) |
+| `primaryTrack` | **real-world-adoption** ✅ (flipped 2026-09-15 from `value-moved` — see note below) |
 | `erc8004Url` | https://8004scan.io/agents/celo/9836 |
 | `agentWalletAddress` | 0x10b4064504D3d0D400A607164190B04dE679A4A6 |
 | `country` | Nigeria |
@@ -57,14 +57,16 @@ live submission API on 2026-09-15.
 - **USAT is "the one stablecoin that counts for both halves of Best Stablecoin
   Adoption"** — lead the stablecoin-bounty pitch with USAT-native.
 
-## ⚠️ One decision before publishing
+## ⚠️ Decision applied: primaryTrack flipped ✅
 
-`primaryTrack` is currently `value-moved` (all your own test txs). The rules say
-*"one primary track… entering everything is not a strategy"*, and value-moved's
-independent-parties gate isn't satisfiable by self-funded test tips. **Recommendation:
-flip `primaryTrack` to `real-world-adoption`** (strongest genuine story: owned
-Telegram channel + USAT-native stablecoin) — keeping `judges-favorite` rationale.
-`PUT /submissions/me` with the full base shape + customFields.
+`primaryTrack` was re-PUT to **`real-world-adoption`** on 2026-09-15 (from
+`value-moved`). Full-replace PUT carried every other field unchanged (verified by
+re-read: tag, agentWalletAddress, erc8004Url, telegram, country, description all
+intact). Rationale: the rules say *"one primary track… entering everything is not
+a strategy"*, and value-moved's independent-parties gate isn't satisfiable by
+self-funded test tips. `real-world-adoption` is the strongest genuine story:
+owned Telegram channel + USAT-native stablecoin (both halves of
+`best-stablecoin-adoption`). `judges-favorite` rationale remains attached.
 
 ## Verification matrix (verified 2026-09-15)
 
