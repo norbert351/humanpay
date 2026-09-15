@@ -15,3 +15,16 @@ demo/*.mp3
 demo/concat.txt
 demo/frames/
 demo/timeline.json
+demo/onyx_clips/
+demo/*.wav
+demo/nar.m4a
+demo/audio_final.m4a
+demo/bed_with_sfx.wav
+demo/sfx*.wav
+demo/concat.txt
+demo/spec.json
+demo/onyx_spec.json
+demo/assemble_nar.py
+demo/mix_audio.py
+demo/gen_onyx.py
+demo/timeline.json
