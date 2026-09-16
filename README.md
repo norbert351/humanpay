@@ -157,16 +157,14 @@ UI: `public/pay.html` (QR pay page + MiniPay deep-link) and the `/app` **Tools**
 - **Persistent receipt + book ledger:** set `AUDIT_DB_PATH` and `AuditStore` swaps to `PersistentAuditStore` AND `HumanPayBook` swaps to `PersistentBook` (both node:sqlite, zero new deps) — receipts AND business objects survive restarts/redeploys, keeping the exact hash-chain integrity (verified by a tamper-detection test that edits the DB directly). Fail-safe: an unwritable path degrades to in-memory with a loud warning instead of failing boot.
 
 - **Implemented + tested:** **116 hermetic tests green** — policy spine (incl. read-only preflight), ERC-8021 attribution, tamper-evident receipts (**8 adversarial tamper cases**), HTTP API (incl. the P2P lane + `/attribution`, which now seeds **verified on-chain evidence** that survives redeploys), Telegram transport, P2P self-custody + DEV tips, EIP-3009 nonce uniqueness, x402 EIP-3009 signer (verified USAT domain), **tagged direct settlement + `/tip/sign`**, SelfRegistry gate, rail-readiness, **persistent store + book**, **auth (scrypt + Google GIS with JWKS verification)**, **telegram push receipts**, **subscription scheduler** (auto-runs due subs through the same spine), split bills, escrow, invoices, webhooks (+test ping), API keys, insights, FX, independence proof, rate limiting, CSV export, MiniPay detect.
-- **✅ REAL VALUE MOVED ON CELO MAINNET** (the thing this hackathon scores):
-  | Tx | What | Rail |
-  |---|---|---|
-  | `0xb4d75077…d3d5` | 0.10 USAT executor → recipient | x402 facilitator (gas sponsored) |
-  | `0x2286bf54…5a27` | 1.00 USAT executor → operator | x402 facilitator |
-  | `0x60049376…5b54` | 0.25 USAT sender → peer (**P2P**) | x402 facilitator |
-  | `0xc58f7f9b…7422` | 0.05 USAT (**ERC-8021 tagged**) | celo-direct-tagged |
-  | `0xe2a94c11…77bc` | 0.15 USAT P2P, on-chain tag verified | celo-direct-tagged |
-  | `0xf88ab9b1…8381` | 0.10 USAT P2P, **consecutive tips with unique nonces** | celo-direct-tagged |
-  | `0xa031b7c4…47b2` | 0.10 USAT P2P (proves the nonce fix) | celo-direct-tagged |
+- **✅ REAL VALUE MOVED ON CELO MAINNET** (the thing this hackathon scores). Credit status is exactly what `/attribution` on the live service reports — **that endpoint is the authoritative, judge-checkable ledger**, and it shows **`taggedCount: 1`** (only the tx whose calldata was verified on-chain to carry the ERC-8021 suffix):
+
+  | Tx on Celo mainnet | What | Rail | Leaderboard credit |
+  |---|---|---|---|
+  | `0xb4d75077…d3d5` | 0.10 USAT executor → recipient | x402 facilitator (gas sponsored) | ❌ not tag-credited (facilitator can't carry data-suffix) |
+  | `0x2286bf54…5a27` | 1.00 USAT executor → operator | x402 facilitator | ❌ not tag-credited |
+  | `0x60049376…5b54` | 0.25 USAT sender → peer (P2P) | x402 facilitator | ❌ not tag-credited |
+  | `0xe2a94c11…77bc` | 0.15 USAT P2P | celo-direct-tagged | ✅ **credited — on-chain tag verified** (`/attribution`) |
 - **✅ Live:** settlement rail = `X402FacilitatorSettlement` (`apiKeySet: true`), executor `0x3360DA…f7C2` funded with USAT + CELO, Telegram `@tokenscanner2_bot` polling, Render deploy current.
 - **✅ ERC-8004 identity:** agent **ID 9836** minted on the rotated operator `0x10b4…A4A6` (the old #9813 was owned by the compromised wallet). `ownerOf(9836)` verified; card at `agents/humanpay.json`.
 - **⚠️ Attribution caveat (important, judge-facing):** the x402 facilitator builds and broadcasts the settlement calldata itself, so a **facilitator-relayed payment can never carry the ERC-8021 data suffix** — the x402 spec has no data-suffix concept at all. Since the leaderboard credits only tagged txs, `settleTagged()` submits the *same* EIP-3009 authorization directly from the executor with the tag appended (executor pays ~0.001 CELO gas). `/attribution` reports which settlements are actually credited.
