@@ -7,10 +7,12 @@ live submission API on 2026-09-15.
 ## Status snapshot (2026-09-15)
 
 - Submission: **draft** (not yet published) · tag **`celo_131f6e57e5b5`** (locked)
-- Deadline: **Sep 21, 09:00 GMT** (~5.5 days) — not missed
+- Deadline: **Sep 21, 09:00 GMT** (~2.9 days at 2026-09-18) — not missed
 - Repo: **public**, `github.com/norbert351/humanpay` · live: `humanpay.onrender.com`
-- **Missing before publish:** `socialLink` (X post), `videoUrl` (demo video),
-  `primaryTrack` (currently `value-moved` — see recommendation below).
+- **Missing before publish:** `socialLink` (X post — draft at `docs/x-post-draft.md`).
+  (`primaryTrack` resolved → `real-world-adoption`, `videoUrl` set — see below.)
+- **Judge-verification map:** every criterion ↔ its exact evidence lives in
+  **`docs/rubric.md`** (verified live 2026-09-18).
 
 ## Field-by-field
 

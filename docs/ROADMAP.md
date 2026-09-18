@@ -18,7 +18,7 @@ via the two owned channels — the Telegram bot and the pay-link/QR surface.
 |---|---|
 | Onboard real humans through the Telegram bot + pay links | `peers: 0` today; the rules count only independent parties with pre-window Celo activity |
 | Publish the X post (`socialLink`) and submit | socialLink is the last empty field; submission is a draft |
-| Set a real `primaryTrack` — recommendation: **real-world-adoption** | rules: "one primary track… entering everything is not a strategy" |
+| `primaryTrack` → **real-world-adoption** ✅ (done 2026-09-15) | rules: "one primary track… entering everything is not a strategy" |
 
 **Decided: Self rail stays MOCK for the submission.** The on-chain `SelfRegistryGate` is
 implemented, wired and tested; flipping LIVE requires a **Self mobile-app scan with a

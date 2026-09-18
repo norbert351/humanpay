@@ -31,6 +31,10 @@ A payment request is only ALLOWED if **all** of these hold; otherwise it is BLOC
 
 So even a prompt-injected agent cannot exceed its bounds, self-authorize, or move money to an undeclared recipient.
 
+> **Docs:** `ARCHITECTURE.md` · `docs/TECHNICAL.md` · **`docs/rubric.md`** (every
+> judging criterion → its exact evidence file/tx/endpoint) · `docs/ROADMAP.md` ·
+> `docs/SUBMISSION.md` (paste-ready entry form).
+
 ## Architecture
 
 ```

@@ -10,7 +10,7 @@ Post from **@zubby_crypt**. Keep it evidence-first: real txs, real receipts.
 Your AI agent can now hold money without being drainable. 🛡️
 
 Built **HumanPay** for @CeloDevs Agents at Work — an agent that moves real USAT
-between real people, but only inside human-set limits.
+on @Celo, but only inside human-set limits.
 
 The anti-drain spine:
 • Self proof-of-personhood before anything moves
